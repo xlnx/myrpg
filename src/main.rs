@@ -1,16 +1,28 @@
 #![feature(trace_macros)]
 // trace_macros!(true);
 
-
 use ::std::collections::{HashMap, HashSet, *};
 use ::std::hash::*;
 use ::std::marker::PhantomData;
+
+
+use ::pretty::{Doc, *};
+use ::regex::{Regex, RegexSet};
+#[macro_use]
+extern crate ref_thread_local;
+use ref_thread_local::RefThreadLocal;
+
+ref_thread_local! {
+    static managed SYMBOL: HashMap<i64, String> = HashMap::new();
+}
 
 fn hash(x: &str) -> i64 {
     use hash_map::DefaultHasher;
     let mut s = DefaultHasher::new();
     s.write(x.as_bytes());
     let val = s.finish() as i64 & (-1i64 as u64 >> 1) as i64;
+    SYMBOL.borrow_mut().insert(val, String::from(x));
+    SYMBOL.borrow_mut().insert(!val, String::from(x));
     // println!("{} => {} | {}", x, val, !val);
     val
 }
@@ -20,21 +32,50 @@ const BOTTOM: i64 = 1i64;
 
 pub type Term = i64;
 
-struct Rule {
+struct Rule<T> {
     patts: Vec<i64>,
-    handler: Box<Fn()>,
+    handler: Box<Fn(&Ast<T>) -> Option<T>>,
 }
 
-impl std::fmt::Debug for Rule {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self.patts)
+fn decode(val: i64) -> String {
+    match val {
+        EPS => return String::from("EPS"),
+        BOTTOM => return String::from("BOTTOM"),
+        _ => {}
+    }
+    match SYMBOL.borrow().get(&val) {
+        Some(val) => String::from(val.as_str()),
+        _ => {
+            panic!("unknown value");
+        }
     }
 }
 
-#[derive(Debug)]
-pub struct Param {
-    rules: Vec<Rule>,
+impl<T> std::fmt::Debug for Rule<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let data = self
+            .patts
+            .iter()
+            .map(|x| decode(*x))
+            .collect::<Vec<String>>();
+        write!(f, "Rule {:?}", data)
+    }
+}
+
+pub struct Param<T> {
+    rules: Vec<Rule<T>>,
     item: i64,
+}
+
+impl<T> std::fmt::Debug for Param<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "Param {{ rules: {:?}, item: {:?} }}",
+            self.rules,
+            decode(self.item)
+        )
+    }
 }
 
 trait IndexMutOrInsert {
@@ -57,7 +98,7 @@ where
     }
 }
 
-fn make_first(first: &mut HashMap<i64, HashSet<i64>>, params: &Vec<Param>) {
+fn make_first<T>(first: &mut HashMap<i64, HashSet<i64>>, params: &Vec<Param<T>>) {
 
     let mut add_sub: bool;
     loop {
@@ -108,10 +149,10 @@ fn make_first(first: &mut HashMap<i64, HashSet<i64>>, params: &Vec<Param>) {
 
 }
 
-fn make_follow(
+fn make_follow<T>(
     first: &HashMap<i64, HashSet<i64>>,
     follow: &mut HashMap<i64, HashSet<i64>>,
-    params: &Vec<Param>,
+    params: &Vec<Param<T>>,
 ) {
     let mut add_sub: bool;
     loop {
@@ -188,7 +229,9 @@ fn make_follow(
 }
 
 pub trait LRLang {
-    fn new() -> (Vec<Param>, Vec<Term>);
+    type Output;
+
+    fn new() -> (Vec<Param<Self::Output>>, Vec<Term>, HashMap<i64, String>);
 }
 
 #[derive(Debug)]
@@ -200,12 +243,12 @@ enum ActionType {
 }
 
 #[derive(Debug)]
-struct Action<'a> {
+struct Action<'a, T> {
     flag: ActionType,
-    rule: Option<&'a Rule>,
+    rule: Option<&'a Rule<T>>,
 }
 
-impl<'a> Action<'a> {
+impl<'a, T> Action<'a, T> {
     fn from(ty: ActionType) -> Self {
         Action {
             flag: ty,
@@ -215,65 +258,195 @@ impl<'a> Action<'a> {
 }
 
 #[allow(dead_code)]
-pub struct LRParser<'a, T> {
-    params: Vec<Param>,
+pub struct LRParser<'a, T: LRLang> {
+    lex_rules: Vec<(i64, Regex)>,
+    lex_rules_set: RegexSet,
+    params: Vec<Param<T::Output>>,
     terms: Vec<Term>,
     first: HashMap<i64, HashSet<i64>>,
     follow: HashMap<i64, HashSet<i64>>,
-    parent_of: HashMap<&'a Rule, i64>,
-    param_of: HashMap<i64, &'a Param>,
-    index_of: HashMap<&'a Rule, usize>,
-    closures: Vec<Closure<'a>>,
-    action: Vec<HashMap<i64, Action<'a>>>,
+    parent_of: HashMap<&'a Rule<T::Output>, i64>,
+    param_of: HashMap<i64, &'a Param<T::Output>>,
+    index_of: HashMap<&'a Rule<T::Output>, usize>,
+    closures: Vec<Closure<'a, T::Output>>,
+    action: Vec<HashMap<i64, Action<'a, T::Output>>>,
     goto: Vec<HashMap<i64, usize>>,
     phantom: PhantomData<T>,
 }
 
-impl<'a> PartialEq for &'a Rule {
-    fn eq(&self, other: &&'a Rule) -> bool {
-        let ptr: *const Rule = *self;
-        let ptr_other: *const Rule = *other;
+impl<'a, T> PartialEq for &'a Rule<T> {
+    fn eq(&self, other: &&'a Rule<T>) -> bool {
+        let ptr: *const Rule<T> = *self;
+        let ptr_other: *const Rule<T> = *other;
         ptr == ptr_other
     }
 }
 
-impl<'a> Eq for &'a Rule {}
+impl<'a, T> Eq for &'a Rule<T> {}
 
-impl<'a> Hash for &'a Rule {
+impl<'a, T> Hash for &'a Rule<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let ptr: *const Rule = *self;
+        let ptr: *const Rule<T> = *self;
         ptr.hash(state)
     }
 }
 
 #[derive(Debug)]
-struct Item<'a> {
-    rule: &'a Rule,
+struct Item<'a, T> {
+    rule: &'a Rule<T>,
     pos: usize,
 }
 
-impl<'a> PartialEq for Item<'a> {
+impl<'a, T> PartialEq for Item<'a, T> {
     fn eq(&self, other: &Self) -> bool {
-        let ptr: *const Rule = self.rule;
-        let other_ptr: *const Rule = other.rule;
+        let ptr: *const Rule<T> = self.rule;
+        let other_ptr: *const Rule<T> = other.rule;
         ptr == other_ptr && self.pos == other.pos
     }
 }
 
-impl<'a> Eq for Item<'a> {}
+impl<'a, T> Eq for Item<'a, T> {}
 
-impl<'a> Hash for Item<'a> {
+impl<'a, T> Hash for Item<'a, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let ptr: *const Rule = self.rule;
+        let ptr: *const Rule<T> = self.rule;
         ptr.hash(state)
     }
 }
 
-type Closure<'a> = HashSet<Item<'a>>;
+type Closure<'a, T> = HashSet<Item<'a, T>>;
 
-impl<'a, T: LRLang> LRParser<'a, T> {
+pub struct Token<'a> {
+    pub id: i64,
+    pub val: &'a str,
+    pub pos: (u32, u32),
+}
 
-    fn find_empty(&self, val: i64) -> Option<&'a Rule> {
+impl<'a> std::fmt::Debug for Token<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}={:?}", decode(self.id), self.val)
+    }
+}
+
+pub struct TextChunk<'a> {
+    text: &'a str,
+}
+
+impl<'a> TextChunk<'a> {
+    pub fn from(text: &'a str) -> Self {
+        TextChunk { text }
+    }
+}
+
+#[derive(Debug)]
+enum AstNode<'a, T> {
+    Ast(Ast<'a, T>),
+    Token(Token<'a>),
+}
+
+impl<'a, T> AstNode<'a, T> {
+    fn to_doc(&self) -> Doc<BoxDoc<()>> {
+        match self {
+            AstNode::Ast(ast) => ast.to_doc(),
+            AstNode::Token(token) => Doc::Newline
+                .append(Doc::as_string(decode(token.id)))
+                .append(Doc::as_string("="))
+                .append(Doc::as_string(token.val)),
+        }
+    }
+    fn as_ast(&self) -> &Ast<T> {
+        if let AstNode::Ast(ast) = &self {
+            ast
+        } else {
+            panic!("failed to unwrap astnode -> ast");
+        }
+    }
+    fn as_token(&self) -> &Token {
+        if let AstNode::Token(tok) = &self {
+            tok
+        } else {
+            panic!("failed to unwrap astnode -> token");
+        }
+    }
+}
+
+struct Ast<'a, T> {
+    id: i64,
+    childs: Vec<AstNode<'a, T>>,
+    rule: &'a Rule<T>,
+}
+
+impl<'a, T> Ast<'a, T> {
+    fn gen(&self) -> Option<T> {
+        (*self.rule.handler)(&self)
+    }
+}
+
+impl<'a, T> std::fmt::Debug for Ast<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.to_pretty(4))
+    }
+}
+
+impl<'a, T> Ast<'a, T> {
+    fn to_doc(&self) -> Doc<BoxDoc<()>> {
+        let doc = Doc::Newline.append(Doc::as_string(decode(self.id)));
+        if self.childs.len() > 0 {
+            doc.append(Doc::text("{"))
+                .append(
+                    Doc::intersperse(self.childs.iter().map(|x| x.to_doc()), Doc::Nil)
+                        .nest(2)
+                        .group(),
+                )
+                .append(Doc::Newline)
+                .append(Doc::text("}"))
+        } else {
+            doc
+        }
+    }
+    fn to_pretty(&self, width: usize) -> String {
+        let mut w = Vec::new();
+        self.to_doc().render(width, &mut w).unwrap();
+        String::from_utf8(w).unwrap()
+    }
+    fn from(id: i64) -> Self {
+        Ast {
+            id,
+            childs: vec![],
+            rule: unsafe { &*(0 as * const Rule<T>) }
+            // sub_ast: vec![],
+            // sub_term: vec![],
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ParseEnv<'a, T> {
+    tokens: VecDeque<Token<'a>>,
+    states: VecDeque<usize>,
+    term_stack: VecDeque<Token<'a>>,
+    ast_stack: VecDeque<Ast<'a, T>>,
+    new_asts: VecDeque<(Ast<'a, T>, i64)>,
+}
+
+impl<'a, T> ParseEnv<'a, T> {
+    fn new() -> Self {
+        ParseEnv {
+            tokens: VecDeque::new(),
+            states: VecDeque::new(),
+            term_stack: VecDeque::new(),
+            ast_stack: VecDeque::new(),
+            new_asts: VecDeque::new(),
+        }
+    }
+}
+
+impl<'a, T> LRParser<'a, T>
+where
+    T: LRLang,
+{
+
+    fn find_empty(&self, val: i64) -> Option<&'a Rule<T::Output>> {
         let param = self.param_of.get(&val).unwrap();
         for rule in param.rules.iter() {
             if rule.patts.len() == 1 && rule.patts[0] == EPS {
@@ -294,7 +467,7 @@ impl<'a, T: LRLang> LRParser<'a, T> {
         None
     }
 
-    fn register_sub(&mut self, val: i64, rule: Option<&'a Rule>, state: usize) {
+    fn register_sub(&mut self, val: i64, rule: Option<&'a Rule<T::Output>>, state: usize) {
         if let None = self.action[state].get(&val) {
             self.action[state].insert(
                 val,
@@ -317,7 +490,7 @@ impl<'a, T: LRLang> LRParser<'a, T> {
         }
     }
 
-    fn expand_closure(&mut self, closure: &Closure, state: usize) {
+    fn expand_closure(&mut self, closure: &Closure<T::Output>, state: usize) {
 
         for item in closure.iter() {
             if item.pos > 0
@@ -353,7 +526,7 @@ impl<'a, T: LRLang> LRParser<'a, T> {
         }
     }
 
-    fn make_closure(&mut self, mut closure: Closure<'a>, state: usize) {
+    fn make_closure(&mut self, mut closure: Closure<'a, T::Output>, state: usize) {
 
         self.expand_closure(&closure, state);
 
@@ -409,9 +582,9 @@ impl<'a, T: LRLang> LRParser<'a, T> {
 
     fn init(&mut self) {
 
-        let mut origin: Closure = Closure::new();
+        let mut origin: Closure<T::Output> = Closure::new();
         unsafe {
-            let rule: *const Rule = &self.params[0].rules[0];
+            let rule: *const Rule<T::Output> = &self.params[0].rules[0];
             origin.insert(Item {
                 rule: &*rule,
                 pos: 0,
@@ -445,7 +618,7 @@ impl<'a, T: LRLang> LRParser<'a, T> {
                                 self.action[state].insert(
                                     *elem,
                                     Action {
-                                        flag: if item.rule as *const Rule
+                                        flag: if item.rule as *const Rule<T::Output>
                                             == &self.params[0].rules[0]
                                         {
                                             ActionType::Accept
@@ -560,7 +733,7 @@ impl<'a, T: LRLang> LRParser<'a, T> {
         let mut parent_of = HashMap::new();
         let mut index_of = HashMap::new();
 
-        let (params, mut terms) = T::new();
+        let (params, mut terms, lex_rules) = T::new();
 
         let mut first: HashMap<i64, HashSet<i64>> = HashMap::new();
         let mut follow: HashMap<i64, HashSet<i64>> = HashMap::new();
@@ -597,23 +770,31 @@ impl<'a, T: LRLang> LRParser<'a, T> {
 
         // index using params::rule!
         let mut index: usize = 0;
-        let mut param_of = HashMap::<i64, &'a Param>::new();
+        let mut param_of = HashMap::<i64, &'a Param<T::Output>>::new();
         for param in params.iter() {
             for rule in param.rules.iter() {
                 unsafe {
-                    let rule_ptr: *const Rule = rule;
+                    let rule_ptr: *const Rule<T::Output> = rule;
                     parent_of.insert(&*rule_ptr, param.item);
                     index_of.insert(&*rule_ptr, index);
                     index += 1;
                 }
             }
             unsafe {
-                let param_ptr: *const Param = param;
+                let param_ptr: *const Param<T::Output> = param;
                 param_of.insert(param.item, &*param_ptr);
             }
         }
 
+        let set = RegexSet::new(lex_rules.iter().map(|x| x.1)).unwrap();
+        let le: Vec<(i64, Regex)> = lex_rules
+            .iter()
+            .map(|x| (*x.0, Regex::new(x.1).unwrap()))
+            .collect();
+
         let mut parser = LRParser {
+            lex_rules: le,
+            lex_rules_set: set,
             params: params,
             terms: terms,
             first: first,
@@ -636,15 +817,191 @@ impl<'a, T: LRLang> LRParser<'a, T> {
         parser
     }
 
-    pub fn parse() {}
+    pub fn next<'b>(&self, chunk: &mut TextChunk<'b>) -> Option<Token<'b>> {
+        // println!("{:?}", self.lex_rules);
+        // println!("{:?}", self.lex_rules_set);
+        // self.lex_rules_set.ma
+        for (val, rule) in self.lex_rules.iter() {
+            if let Some(caps) = rule.captures(chunk.text) {
+                let m = caps.get(1).unwrap();
+                let (s, t) = (m.start(), m.end());
+                let tok = Token {
+                    id: *val,
+                    val: &chunk.text[s..t],
+                    pos: (0, 0),
+                };
+                // println!("yield ====> {:?}", tok);
+                chunk.text = &chunk.text[t..];
+                return Some(tok);
+            }
+        }
+
+        None
+    }
+
+    fn do_merge(&self, rule: &'a Rule<T::Output>, env: &mut ParseEnv<'a, T::Output>) {
+        let ParseEnv {
+            ast_stack,
+            new_asts,
+            term_stack,
+            states,
+            ..
+        } = env;
+
+        let mut ast_size = 0;
+        let mut term_size = 0;
+        for dummy in rule.patts.iter() {
+            if *dummy <= 0i64 {
+                ast_size += 1;
+            } else {
+                term_size += 1;
+            }
+        }
+
+        let len = ast_stack.len();
+        let sub_ast: Vec<_> = ast_stack.split_off(len - ast_size).into_iter().collect();
+        let len = term_stack.len();
+        let sub_term: Vec<_> = term_stack.split_off(len - term_size).into_iter().collect();
+        let len = states.len();
+        states.split_off(len - ast_size - term_size);
+        let id = *self.parent_of.get(&rule).unwrap();
+
+        let mut childs = vec![];
+        let mut it_ast = sub_ast.into_iter();
+        let mut it_term = sub_term.into_iter();
+
+        for dummy in rule.patts.iter() {
+            if *dummy <= 0i64 {
+                childs.push(AstNode::Ast(it_ast.next().unwrap()));
+            } else {
+                childs.push(AstNode::Token(it_term.next().unwrap()));
+            }
+        }
+
+        let ast = Ast {
+            id,
+            childs,
+            rule
+            // sub_ast,
+            // sub_term,
+        };
+        // println!(
+        //     "yields => {:?}",
+        //     ast // decode(id)
+        // );
+        new_asts.push_back((ast, *self.parent_of.get(&rule).unwrap()));
+    }
+
+    fn do_match(&self, term: i64, env: &mut ParseEnv<'a, T::Output>) -> bool {
+        let ParseEnv {
+            states,
+            ast_stack,
+            new_asts,
+            tokens,
+            term_stack,
+            ..
+        } = env;
+        let state = *states.back().unwrap();
+        // println!("");
+        // println!("ast_stack = {:?}", ast_stack);
+        // // let term_vec: Vec<_> = term_stack.iter().map(|x|decode(*x)).collect();
+        // println!("term_stack = {:?}", term_stack);
+        // println!(
+        //     "new_asts = {:?}",
+        //     new_asts.iter().map(|x| &x.0).collect::<Vec<&Ast>>()
+        // );
+        // println!("states = {:?}", states);
+        // // println!("action = {:?}", self.action[state]);
+        // println!(
+        //     "ACTION[{:?}][{:?}] = {:?}",
+        //     state,
+        //     decode(term),
+        //     self.action[state].get(&term)
+        // );
+        match self.action[state].get(&term) {
+            Some(action) => match action.flag {
+                ActionType::MoveIn => {
+                    states.push_back(*self.goto[state].get(&term).unwrap());
+                    if term >= 0 {
+                        term_stack.push_back(tokens.pop_front().unwrap());
+                    } else {
+                        ast_stack.push_back(new_asts.pop_back().unwrap().0);
+                    }
+                }
+                ActionType::Hold => {
+                    states.push_back(0);
+                    ast_stack.push_back(Ast::from(0));
+                    self.do_merge(action.rule.unwrap(), env);
+                }
+                ActionType::Accept => {
+                    if ast_stack.len() == 1
+                        && tokens.is_empty()
+                        && new_asts.is_empty()
+                        && term_stack.is_empty()
+                    {
+                        return true;
+                    }
+                }
+                ActionType::Reduce => {
+                    self.do_merge(action.rule.unwrap(), env);
+                }
+            },
+            None => {
+                panic!();
+            }
+        }
+        false
+    }
+
+    pub fn parse<'b>(&self, text: &'b str) {
+        let mut chunk = TextChunk::from(text);
+        // let token = self.next(&mut chunk);
+        let mut env = ParseEnv::new();
+        while let Some(token) = self.next(&mut chunk) {
+            env.tokens.push_back(token);
+        }
+        env.states.push_back(0);
+
+        // println!("closure = {:?}", self.closures);
+
+        loop {
+            let term = match env.new_asts.back() {
+                Some(ast) => ast.1,
+                _ => {
+                    if env.tokens.is_empty() {
+                        BOTTOM
+                    } else {
+                        env.tokens.front().unwrap().id
+                    }
+                }
+            };
+            if self.do_match(term, &mut env) {
+                break;
+            }
+        }
+
+        let ParseEnv {
+            ast_stack: mut deq_ast,
+            ..
+        } = env;
+        let ast = deq_ast.remove(0).unwrap();
+        (*ast.rule.handler)(&ast);
+    }
 }
 
 macro_rules! mkrule {
-    ($set: ident, $($b: tt)* $(=> $cb: expr)?) => {{
+    ($res: ty, $set: ident, $($b: tt)*) => {{
         // unimplemented!()
         let mut rule = Rule {
             patts: vec![],
-            handler: Box::new(|| {}),
+            handler: Box::new(|ast: &Ast<$res>| -> Option<$res> {
+                for ast in ast.childs.iter() {
+                    if let AstNode::Ast(ast) = ast {
+                        (*ast.rule.handler)(&ast);
+                    }
+                }
+                None
+            }),
         };
         $(
             {
@@ -668,15 +1025,14 @@ macro_rules! mkrule {
                 }
             }
         )*
-        $(
-            rule.handler = Box::new($cb);
-        )*
         rule
     }};
 }
 
 macro_rules! lang {
     (
+        $res: ty
+        ;;
         $(
             $l: ident => $reg: expr
         ),* $(,)?
@@ -691,13 +1047,19 @@ macro_rules! lang {
         struct Lang {}
         #[allow(dead_code, non_snake_case, unused_variables)]
         impl LRLang for Lang {
-            fn new() -> (Vec<Param>, Vec<Term>) {
+            type Output = $res;
+
+            fn new() -> (Vec<Param<Self::Output>>, Vec<Term>, HashMap<i64, String>) {
+
                 // make terms
+                let mut lex_rules: HashMap<_, String> = HashMap::new();
                 let mut terms = vec![];
                 $(
-                    terms.push(hash(stringify!($l)));
+                    let ha = hash(stringify!($l));
+                    terms.push(ha);
+                    lex_rules.insert(ha, format!(r"^\s*({})", $reg));
                 )*
-                let mut terms_set: HashSet<_> = terms.iter().collect();
+                let terms_set: HashSet<_> = terms.iter().collect();
 
                 let mut params = vec![];
                 // make params
@@ -707,14 +1069,18 @@ macro_rules! lang {
                         item: !hash(stringify!($a))
                     };
                     $(
-                        param.rules.push(
-                            mkrule!(terms_set, $($b)* $(=> $cb)?)
-                        );
+                        param.rules.push({
+                            let mut rule = mkrule!($res, terms_set, $($b)*);
+                            $(
+                                rule.handler = Box::new($cb);
+                            )*
+                            rule
+                        });
                     )*
                     params.push(param);
                 })*
 
-                (params, terms)
+                (params, terms, lex_rules)
             }
         }
     };
@@ -722,35 +1088,91 @@ macro_rules! lang {
 
 lang! {
 
-    Number => "[0-9]+",
-    Id => "[a-zA-Z]+",
-    Add => "+",
-    Sub => "-",
-    Mul => "-",
-    Div => "/",
+    i32
+
+    ;;
+
+    Number => r"[0-9]+",
+    Add => r"\+",
+    Sub => r"-",
+    Mul => r"\*",
+    Div => r"/",
+    LBracket => r"\(",
+    RBracket => r"\)",
 
     ;;
 
     S => [
-        Expr
+        Value
+    ],
+    Value => [
+        Expr => |ast: &Ast<_>| -> Option<i32> {
+            println!("{}", ast.childs[0].as_ast().gen().unwrap());
+            None
+        }
     ],
     Expr => [
-        Expr Add Term,
-        Expr Sub Term,
-        Term
+        Expr Add Term => |ast: &Ast<_>| -> Option<i32> {
+            if let (AstNode::Ast(lhs), AstNode::Ast(rhs)) = (&ast.childs[0], &ast.childs[2]) {
+                Some(lhs.gen().unwrap() + rhs.gen().unwrap())
+            } else {
+                panic!("WTF")
+            }
+        },
+        Expr Sub Term => |ast: &Ast<_>| -> Option<i32> {
+            if let (AstNode::Ast(lhs), AstNode::Ast(rhs)) = (&ast.childs[0], &ast.childs[2]) {
+                Some(lhs.gen().unwrap() - rhs.gen().unwrap())
+            } else {
+                panic!("WTF")
+            }
+        },
+        Term => |ast: &Ast<_>| -> Option<i32> {
+            ast.childs[0].as_ast().gen()
+        }
     ],
     Term => [
-        Term Mul Factor,
-        Term Div Factor,
-        Factor
+        Term Mul Factor => |ast: &Ast<_>| -> Option<i32> {
+            if let (AstNode::Ast(lhs), AstNode::Ast(rhs)) = (&ast.childs[0], &ast.childs[2]) {
+                Some(lhs.gen().unwrap() * rhs.gen().unwrap())
+            } else {
+                panic!("WTF")
+            }
+        },
+        Term Div Factor => |ast: &Ast<_>| -> Option<i32> {
+            if let (AstNode::Ast(lhs), AstNode::Ast(rhs)) = (&ast.childs[0], &ast.childs[2]) {
+                Some(lhs.gen().unwrap() / rhs.gen().unwrap())
+            } else {
+                panic!("WTF")
+            }
+        },
+        Factor => |ast: &Ast<_>| -> Option<i32> {
+            ast.childs[0].as_ast().gen()
+        }
     ],
     Factor => [
-        Number
+        Number => |ast: &Ast<_>| -> Option<i32> {
+            if let AstNode::Token(tok) = &ast.childs[0] {
+                Some(tok.val.parse().unwrap())
+            } else {
+                panic!("WTF")
+            }
+        },
+        LBracket Expr RBracket => |ast: &Ast<_>| -> Option<i32> {
+            ast.childs[1].as_ast().gen()
+        }
     ]
+
 }
 
 #[allow(dead_code, non_snake_case, unused_variables)]
 fn main() {
     let parser = LRParser::<Lang>::new();
+
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    while let Ok(_) = stdin.read_line(&mut line) {
+        parser.parse(line.as_str());
+        line.clear();
+    }
 
 }

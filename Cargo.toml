@@ -6,3 +6,5 @@ edition = "2018"
 
 [dependencies]
 regex = "1.1.6"
+ref_thread_local = "0.0.0"
+pretty = "0.5.2"
