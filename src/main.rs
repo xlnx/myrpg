@@ -4,7 +4,7 @@ extern crate ref_thread_local;
 
 #[macro_use]
 mod parser;
-use parser::{LRParser, ast::*, LRLang, wrapper::Callback};
+use parser::{ast::*, wrapper::Callback, LRLang, LRParser};
 
 lang! {
 
@@ -45,7 +45,7 @@ lang! {
 
             lhs.gen().unwrap() - rhs.gen().unwrap()
         },
-        Term => |ast: &Ast<_>| -> Option<i32> {
+        Term => |ast: &Ast<_>| -> _ {
             ast.childs[0].as_ast().gen()
         }
     ],

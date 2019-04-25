@@ -2,9 +2,12 @@
 
 
 ```rust
+use parser::{ast::*, wrapper::Callback, LRLang, LRParser};
+
 lang! {
 
-    i32
+    Name = MathExpr
+    ValueType = i32
 
     ;;
 
@@ -28,61 +31,53 @@ lang! {
         }
     ],
     Expr => [
-        Expr Add Term => |ast: &Ast<_>| -> Option<i32> {
-            if let (AstNode::Ast(lhs), AstNode::Ast(rhs)) = (&ast.childs[0], &ast.childs[2]) {
-                Some(lhs.gen().unwrap() + rhs.gen().unwrap())
-            } else {
-                panic!("WTF")
-            }
+        Expr Add Term => |ast: &Ast<_>| -> i32 {
+            let lhs = ast.childs[0].as_ast();
+            let rhs = ast.childs[2].as_ast();
+
+            lhs.gen().unwrap() + rhs.gen().unwrap()
         },
-        Expr Sub Term => |ast: &Ast<_>| -> Option<i32> {
-            if let (AstNode::Ast(lhs), AstNode::Ast(rhs)) = (&ast.childs[0], &ast.childs[2]) {
-                Some(lhs.gen().unwrap() - rhs.gen().unwrap())
-            } else {
-                panic!("WTF")
-            }
+        Expr Sub Term => |ast: &Ast<_>| -> i32 {
+            let lhs = ast.childs[0].as_ast();
+            let rhs = ast.childs[2].as_ast();
+
+            lhs.gen().unwrap() - rhs.gen().unwrap()
         },
-        Term => |ast: &Ast<_>| -> Option<i32> {
+        Term => |ast: &Ast<_>| -> _ {
             ast.childs[0].as_ast().gen()
         }
     ],
     Term => [
-        Term Mul Factor => |ast: &Ast<_>| -> Option<i32> {
-            if let (AstNode::Ast(lhs), AstNode::Ast(rhs)) = (&ast.childs[0], &ast.childs[2]) {
-                Some(lhs.gen().unwrap() * rhs.gen().unwrap())
-            } else {
-                panic!("WTF")
-            }
+        Term Mul Factor => |ast: &Ast<_>| -> i32 {
+            let lhs = ast.childs[0].as_ast();
+            let rhs = ast.childs[2].as_ast();
+
+            lhs.gen().unwrap() * rhs.gen().unwrap()
         },
-        Term Div Factor => |ast: &Ast<_>| -> Option<i32> {
-            if let (AstNode::Ast(lhs), AstNode::Ast(rhs)) = (&ast.childs[0], &ast.childs[2]) {
-                Some(lhs.gen().unwrap() / rhs.gen().unwrap())
-            } else {
-                panic!("WTF")
-            }
+        Term Div Factor => |ast: &Ast<_>| -> i32 {
+            let lhs = ast.childs[0].as_ast();
+            let rhs = ast.childs[2].as_ast();
+
+            lhs.gen().unwrap() / rhs.gen().unwrap()
         },
-        Factor => |ast: &Ast<_>| -> Option<i32> {
+        Factor => |ast: &Ast<_>| -> _ {
             ast.childs[0].as_ast().gen()
         }
     ],
     Factor => [
-        Number => |ast: &Ast<_>| -> Option<i32> {
-            if let AstNode::Token(tok) = &ast.childs[0] {
-                Some(tok.val.parse().unwrap())
-            } else {
-                panic!("WTF")
-            }
+        Number => |ast: &Ast<_>| -> i32 {
+            let tok = ast.childs[0].as_token();
+            tok.val.parse().unwrap()
         },
-        LBracket Expr RBracket => |ast: &Ast<_>| -> Option<i32> {
+        LBracket Expr RBracket => |ast: &Ast<_>| -> _ {
             ast.childs[1].as_ast().gen()
         }
     ]
 
 }
 
-#[allow(dead_code, non_snake_case, unused_variables)]
 fn main() {
-    let parser = LRParser::<Lang>::new();
+    let parser = LRParser::<MathExpr>::new();
 
     let stdin = std::io::stdin();
     let mut line = String::new();
