@@ -4,7 +4,7 @@ use super::rule::Rule;
 use super::util::decode;
 
 pub struct Token<'a> {
-	pub id: i64,
+	pub(crate) id: i64,
 	pub val: &'a str,
 	pub pos: (u32, u32),
 }

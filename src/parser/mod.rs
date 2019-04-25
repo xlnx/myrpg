@@ -179,12 +179,13 @@ pub struct LRParser<'a, T: LRLang> {
 }
 
 struct TextChunk<'a> {
+	pos: (u32, u32),
 	text: &'a str,
 }
 
 impl<'a> TextChunk<'a> {
 	fn from(text: &'a str) -> Self {
-		TextChunk { text }
+		TextChunk { pos: (0, 0), text }
 	}
 }
 
@@ -592,12 +593,25 @@ where
 			if let Some(caps) = rule.captures(chunk.text) {
 				let m = caps.get(1).unwrap();
 				let (s, t) = (m.start(), m.end());
+				let mut beg = 0;
+				while let Some(pos) = chunk.text[beg..s].find(|c: char| c == '\n') {
+					chunk.pos = (chunk.pos.0 + 1, 0);
+					beg += pos + 1;
+				}
+				chunk.pos.1 += (s - beg) as u32;
+				// .find('\n');
 				let tok = Token {
 					id: *val,
 					val: &chunk.text[s..t],
-					pos: (0, 0),
+					pos: chunk.pos,
 				};
 				// println!("yield ====> {:?}", tok);
+				beg = s;
+				while let Some(pos) = chunk.text[s..t].find(|c: char| c == '\n') {
+					chunk.pos = (chunk.pos.0 + 1, 0);
+					beg += pos + 1;
+				}
+				chunk.pos.1 += (t - beg) as u32;
 				chunk.text = &chunk.text[t..];
 				return Some(tok);
 			}
@@ -638,13 +652,7 @@ where
 			}
 		}
 
-		let ast = Ast {
-            id,
-            childs,
-            rule
-            // sub_ast,
-            // sub_term,
-        };
+		let ast = Ast { id, childs, rule };
 		// println!(
 		//     "yields => {:?}",
 		//     ast // decode(id)
@@ -706,7 +714,8 @@ where
 				}
 			},
 			None => {
-				panic!();
+				let Token { val, pos, .. } = tokens.front().unwrap();
+				panic!(format!("Unexpected Token: {:?} at {:?}", val, pos));
 			}
 		}
 		false

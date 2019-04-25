@@ -14,6 +14,7 @@ lang! {
     ;;
 
     Number => r"[0-9]+",
+    Id => r"[a-zA-Z_]+",
     Add => r"\+",
     Sub => r"-",
     Mul => r"\*",
