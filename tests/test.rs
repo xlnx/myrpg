@@ -1,3 +1,6 @@
+// #![feature(trace_macros)]
+// trace_macros!(true);
+
 use myrpg::{ast::*, wrapper::Callback, LRParser, *};
 
 lang! {
@@ -22,53 +25,41 @@ lang! {
 		Value
 	],
 	Value => [
-		Expr => |ast: &Ast<_>| -> _ {
-			let res = ast.childs[0].as_ast().gen().unwrap();
+		Expr => |child: &Ast<_>| -> _ {
+			let res = child.gen().unwrap();
 			println!("{}", res);
-			res
+			Some(res)
 		}
 	],
 	Expr => [
-		Expr Add Term => |ast: &Ast<_>| -> _ {
-			let lhs = ast.childs[0].as_ast();
-			let rhs = ast.childs[2].as_ast();
-
-			lhs.gen().unwrap() + rhs.gen().unwrap()
+		Expr Add Term => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+			Some(lhs.gen().unwrap() + rhs.gen().unwrap())
 		},
-		Expr Sub Term => |ast: &Ast<_>| -> _ {
-			let lhs = ast.childs[0].as_ast();
-			let rhs = ast.childs[2].as_ast();
-
-			lhs.gen().unwrap() - rhs.gen().unwrap()
+		Expr Sub Term => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+			Some(lhs.gen().unwrap() - rhs.gen().unwrap())
 		},
-		Term => |ast: &Ast<_>| -> _ {
-			ast.childs[0].as_ast().gen()
+		Term => |child: &Ast<_>| -> _ {
+			child.gen()
 		}
 	],
 	Term => [
-		Term Mul Factor => |ast: &Ast<_>| -> _ {
-			let lhs = ast.childs[0].as_ast();
-			let rhs = ast.childs[2].as_ast();
-
-			lhs.gen().unwrap() * rhs.gen().unwrap()
+		Term Mul Factor => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+			println!("{}", lhs.as_string(10));
+			Some(lhs.gen().unwrap() * rhs.gen().unwrap())
 		},
-		Term Div Factor => |ast: &Ast<_>| -> _ {
-			let lhs = ast.childs[0].as_ast();
-			let rhs = ast.childs[2].as_ast();
-
-			lhs.gen().unwrap() / rhs.gen().unwrap()
+		Term Div Factor => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+			Some(lhs.gen().unwrap() / rhs.gen().unwrap())
 		},
-		Factor => |ast: &Ast<_>| -> _ {
-			ast.childs[0].as_ast().gen()
+		Factor => |child: &Ast<_>| -> _ {
+			child.gen()
 		}
 	],
 	Factor => [
-		Number => |ast: &Ast<_>| -> i32 {
-			let tok = ast.childs[0].as_token();
-			tok.val.parse().unwrap()
+		Number => |tok: &Token| -> Option<i32> {
+			Some(tok.val.parse().unwrap())
 		},
-		LBracket Expr RBracket => |ast: &Ast<_>| -> _ {
-			ast.childs[1].as_ast().gen()
+		LBracket Expr RBracket => |_, child: &Ast<_>, _| -> _ {
+			child.gen()
 		}
 	]
 

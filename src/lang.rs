@@ -6,7 +6,92 @@ macro_rules! lang {
 	(@any_expr $x:expr) => {
 		true
 	};
-	// (@expand_with_lex ($($l), *))
+	(@expand_grammar
+		$res: ty
+		;;
+		$tuple: tt
+		@
+		$(
+			$a: ident => [
+				$( $($b: ident)* $(=> $(@ $attr: ident)? $cb: expr)?),*
+			]
+		),*
+	) => {{
+		let mut lng: Vec<(
+				&'a str,
+				Vec<(
+					Vec<&'a str>,
+					Option<Box<FnType>>
+				)>
+			)> = vec![];
+
+		$({
+			lng.push((
+				stringify!($a),
+				lang!(@expand_param $res ;; $tuple @
+					$( $($b)* $(=> $(@ $attr)? $cb)?),*
+				)
+			));
+		})*
+		lng
+	} };
+	(@expand_param
+		$res: ty
+		;;
+		$tuple: tt
+		@
+		$( $($b: ident)* $(=> $(@ $attr: ident)? $cb: expr)?),*
+	) => { {
+		let mut rules: Vec<(
+				Vec<&'a str>,
+				Option<Box<FnType>>
+			)> = vec![];
+		$({
+			let ss = vec![$(
+				stringify!($b),
+			)*];
+			// let rule: (Vec<&str>, Option<Box<FnType>>) =
+			let cb: Option<Box<FnType>> =
+			if lang!(@any_expr $($cb)*) {
+				lang!(@expand_callback_del
+					$res
+					;;
+					$tuple
+					@
+					($($b)*)
+					@
+					$($(@ $attr)? $cb)?
+				)
+			} else {
+				None
+			};
+			rules.push((ss, cb));
+		})*
+		rules
+	} };
+	(@expand_callback_del
+		$res: ty ;; $terms: tt @ $patts: tt @
+		$($(@ $attr: ident)? $cb: expr)?
+	) => { {
+		None as Option<Box<FnType>>
+		$(
+			;lang!(@expand_callback $res ;; $terms @ $patts @ ($($attr)?) @ $cb)
+		)?
+	} };
+	(@expand_callback
+		$res: ty ;; $terms: tt @ $patts: tt @ $attr: tt @
+		$cb: expr
+	) => { {
+		Some({
+			struct __Dummy;
+			impl __Dummy {
+				dest_callback!($res $terms $patts $attr $cb);
+			}
+			__Dummy::apply()
+		}.wrap())
+		// Some(cb.wrap())
+	} };
+
 	(
 		Name = $name: ident
 		ValueType = $res: ty
@@ -17,7 +102,7 @@ macro_rules! lang {
 		;;
 		$(
 			$a: ident => [
-				$( $($b: ident)* $(=> $cb: expr)?),* $(,)?
+				$( $($b: ident)* $(=> $(@ $attr: ident)? $cb: expr)?),* $(,)?
 			]
 		),* $(,)?
 	) => {
@@ -42,38 +127,14 @@ macro_rules! lang {
 				$(
 					lex.push((stringify!($l), $reg));
 				)*
-				let mut lng: Vec<(
-						&'a str,
-						Vec<(
-							Vec<&'a str>,
-							Option<Box<FnType>>
-						)>
-					)> = vec![];
-				$({
-					let mut rules: Vec<(
-							Vec<&'a str>,
-							Option<Box<FnType>>
-						)> = vec![];
+
+				let lng = lang!(@expand_grammar $res ;; ($($l)*) @
 					$(
-						let ss = vec![$(
-							stringify!($b),
-						)*];
-						// let rule: (Vec<&str>, Option<Box<FnType>>) =
-						let cb: Option<Box<FnType>> =
-						if lang!(@any_expr $($cb)*) {
-							None as Option<Box<FnType>>
-							$(
-								;let cb: Box<Fn(&Ast<$res>) -> _> = Box::new($cb);
-								// dest_callback!($($l)* $cb);
-								Some(cb.wrap())
-							)*
-						} else {
-							None
-						};
-						rules.push((ss, cb));
-					)*
-					lng.push((stringify!($a), rules));
-				})*
+						$a => [
+							$( $($b)* $(=> $(@ $attr)? $cb)?),*
+						]
+					),*
+				);
 
 				(lex, lng)
 			}
