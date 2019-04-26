@@ -8,7 +8,7 @@ extern crate ref_thread_local;
 
 mod util;
 #[allow(unused_imports)]
-use util::{decode, hash, BOTTOM, EPS};
+use util::{decode, hash, AsString, BOTTOM, EPS};
 
 pub mod ast;
 use ast::{Ast, AstNode, Token};
@@ -376,6 +376,10 @@ where
 										rule: Some(item.rule),
 									},
 								);
+								// if let Some(dst) = self.goto[state].get(&item.rule.src) {
+								// 	let dst = *dst;
+								// 	self.goto[state].insert(*elem, dst);
+								// }
 							}
 						}
 					}
@@ -517,6 +521,9 @@ where
 			first.index_mut_or_insert(*term).insert(*term);
 			follow.index_mut_or_insert(*term);
 		}
+
+		terms.push(BOTTOM);
+
 		// insert params
 		for param in params.iter() {
 			for rule in param.rules.iter() {
@@ -539,8 +546,6 @@ where
 		make_first(&mut first, &params);
 		// make follow
 		make_follow(&first, &mut follow, &params);
-
-		terms.push(BOTTOM);
 
 		// index using params::rule!
 		let mut index: usize = 0;
@@ -589,6 +594,40 @@ where
 		// println!("GOTO = {:?}", parser.goto);
 
 		parser
+	}
+
+	pub fn get_closure(&self) -> String {
+		self.closures.as_string()
+	}
+
+	pub fn get_parse_table(&self) -> String {
+		let mut res = format!("{:4}", "");
+		for term in self.terms.iter() {
+			res += &format!("{:6}", decode(*term));
+		}
+		for (s, _) in self.closures.iter().enumerate() {
+			res += &format!("\n{:<4}", s);
+			let action = &self.action[s];
+			let goto = &self.goto[s];
+			for term in self.terms.iter() {
+				if let Some(Action { flag, .. }) = action.get(term) {
+					let action = match flag {
+						ActionType::MoveIn => "s",
+						ActionType::Reduce => "r",
+						ActionType::Hold => "h",
+						ActionType::Accept => "acc",
+					};
+					if let Some(dst) = goto.get(term) {
+						res += &format!("{:6}", format!("{}{}", action, dst));
+					} else {
+						res += &format!("{:6}", format!("{}{}", action, ""));
+					}
+				} else {
+					res += &format!("{:6}", "");
+				}
+			}
+		}
+		format!("{}", res)
 	}
 
 	fn next<'b>(&self, chunk: &mut TextChunk<'b>) -> Option<Token<'b>> {
@@ -737,8 +776,6 @@ where
 			env.tokens.push_back(token);
 		}
 		env.states.push_back(0);
-
-		// println!("closure = {:?}", self.closures);
 
 		loop {
 			let term = match env.new_asts.back() {

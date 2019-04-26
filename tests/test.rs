@@ -1,75 +1,74 @@
 use myrpg::{ast::*, LRParser, *};
 
-lang! {
+// lang! {
 
-	Name = MathExpr
-	ValueType = i32
+// 	Name = MathExpr
+// 	ValueType = i32
 
-	;;
+// 	;;
 
-	Number => r"[0-9]+",
-	Id => r"[a-zA-Z_]+",
-	Add => r"\+",
-	Sub => r"-",
-	Mul => r"\*",
-	Div => r"/",
-	LBracket => r"\(",
-	RBracket => r"\)",
+// 	Number => r"[0-9]+",
+// 	Id => r"[a-zA-Z_]+",
+// 	Add => r"\+",
+// 	Sub => r"-",
+// 	Mul => r"\*",
+// 	Div => r"/",
+// 	LBracket => r"\(",
+// 	RBracket => r"\)",
 
-	;;
+// 	;;
 
-	S => [
-		Value
-	],
-	Value => [
-		Expr => |child| -> _ {
-			let res = child.gen().unwrap();
-			println!("{}", res);
-			Some(res)
-		}
-	],
-	Expr => [
-		Expr Add Term => |lhs, _, rhs| -> _ {
-			Some(lhs.gen().unwrap() + rhs.gen().unwrap())
-		},
-		Expr Sub Term => |lhs, _, rhs| -> _ {
-			Some(lhs.gen().unwrap() - rhs.gen().unwrap())
-		},
-		Term => |child| -> _ {
-			child.gen()
-		}
-	],
-	Term => [
-		Term Mul Factor => |lhs, _, rhs| -> _ {
-			println!("{}", lhs.as_string(10));
-			Some(lhs.gen().unwrap() * rhs.gen().unwrap())
-		},
-		Term Div Factor => |lhs, _, rhs| -> _ {
-			Some(lhs.gen().unwrap() / rhs.gen().unwrap())
-		},
-		Factor => |child| -> _ {
-			child.gen()
-		}
-	],
-	Factor => [
-		Number => |tok| -> Option<i32> {
-			Some(tok.val.parse().unwrap())
-		},
-		LBracket Expr RBracket => |_, child, _| -> _ {
-			child.gen()
-		}
-	]
+// 	S => [
+// 		Value
+// 	],
+// 	Value => [
+// 		Expr => |child| -> _ {
+// 			let res = child.gen().unwrap();
+// 			println!("{:?}", child);
+// 			Some(res)
+// 		}
+// 	],
+// 	Expr => [
+// 		Expr Add Term => |lhs, _, rhs| -> _ {
+// 			Some(lhs.gen().unwrap() + rhs.gen().unwrap())
+// 		},
+// 		Expr Sub Term => |lhs, _, rhs| -> _ {
+// 			Some(lhs.gen().unwrap() - rhs.gen().unwrap())
+// 		},
+// 		Term => |child| -> _ {
+// 			child.gen()
+// 		}
+// 	],
+// 	Term => [
+// 		Term Mul Factor => |lhs, _, rhs| -> _ {
+// 			Some(lhs.gen().unwrap() * rhs.gen().unwrap())
+// 		},
+// 		Term Div Factor => |lhs, _, rhs| -> _ {
+// 			Some(lhs.gen().unwrap() / rhs.gen().unwrap())
+// 		},
+// 		Factor => |child| -> _ {
+// 			child.gen()
+// 		}
+// 	],
+// 	Factor => [
+// 		Number => |tok| -> Option<i32> {
+// 			Some(tok.val.parse().unwrap())
+// 		},
+// 		LBracket Expr RBracket => |_, child, _| -> _ {
+// 			child.gen()
+// 		}
+// 	]
 
-}
+// }
 
-#[test]
-fn test_math_expr() {
-	let parser = LRParser::<MathExpr>::new();
+// #[test]
+// fn test_math_expr() {
+// 	let parser = LRParser::<MathExpr>::new();
 
-	let res = parser.parse("3 * (1 + 2)");
+// 	let res = parser.parse("3 * (1 + 2)");
 
-	assert_eq!(res, Ok(Some(9)));
-}
+// 	assert_eq!(res, Ok(Some(9)));
+// }
 
 lang! {
 
@@ -78,32 +77,28 @@ lang! {
 
 	;;
 
-	Number => r"[0-9]+",
-	Neg => r"-",
-	Mul => r"\*"
+	Id => r"[0-9]+",
+	Add => r"\+",
+	Mul => r"\*",
+	LBra => r"\(",
+	RBra => r"\}"
 
 	;;
 
 	S => [
-		Value
+		E
 	],
-	Value => [
-		Expr => |child| -> _ {
-			let res = child.gen().unwrap();
-			println!("{}", res);
-			Some(res)
-		}
+	E => [
+		E Add T,
+		T
 	],
-	Expr => [
-		Expr Mul Expr => |lhs, _, rhs| -> _ {
-			Some(lhs.gen().unwrap() * rhs.gen().unwrap())
-		},
-		Neg Expr => |_, child| -> _ {
-			Some(-child.gen().unwrap())
-		},
-		Number => |tok| -> _ {
-			Some(tok.val.parse().unwrap())
-		}
+	T => [
+		T Mul F,
+		F
+	],
+	F => [
+		LBra E RBra,
+		Id
 	]
 
 }
@@ -111,8 +106,6 @@ lang! {
 #[test]
 fn test_move_in_reduce() {
 	let parser = LRParser::<MoveInReduce>::new();
-
-	let res = parser.parse("- 3 * 2");
-
-	assert_eq!(res, Ok(Some(-6)));
+	println!("{}", parser.get_closure());
+	println!("{}", parser.get_parse_table());
 }

@@ -1,6 +1,8 @@
 use std::collections::{HashMap, *};
 use std::hash::*;
 
+use pretty::{Doc, *};
+
 pub const EPS: i64 = 0i64;
 pub const BOTTOM: i64 = 1i64;
 
@@ -32,5 +34,24 @@ pub fn decode(val: i64) -> &'static str {
 		_ => {
 			panic!("unknown value");
 		}
+	}
+}
+
+pub trait ToDoc {
+	fn to_doc(&self) -> Doc<BoxDoc<()>>;
+}
+
+pub trait AsString {
+	fn as_string(&self) -> String;
+}
+
+impl<T> AsString for T
+where
+	T: ToDoc 
+{
+	fn as_string(&self) -> String {
+		let mut w = Vec::new();
+		self.to_doc().render(128, &mut w).unwrap();
+		String::from_utf8(w).unwrap()
 	}
 }

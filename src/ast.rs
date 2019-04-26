@@ -1,7 +1,7 @@
 use pretty::{Doc, *};
 
 use super::rule::Rule;
-use super::util::decode;
+use super::util::{decode, ToDoc, AsString};
 
 pub struct Token<'a> {
 	pub(crate) id: i64,
@@ -38,11 +38,11 @@ impl<'a, T> Ast<'a, T> {
 
 impl<'a, T> std::fmt::Debug for Ast<'a, T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{}", self.as_string(4))
+		write!(f, "{}", self.as_string())
 	}
 }
 
-impl<'a, T> Ast<'a, T> {
+impl<'a, T> ToDoc for Ast<'a, T> {
 	fn to_doc(&self) -> Doc<BoxDoc<()>> {
 		let doc = Doc::Newline.append(Doc::as_string(decode(self.id)));
 		if self.childs.len() > 0 {
@@ -58,11 +58,9 @@ impl<'a, T> Ast<'a, T> {
 			doc
 		}
 	}
-	pub fn as_string(&self, width: usize) -> String {
-		let mut w = Vec::new();
-		self.to_doc().render(width, &mut w).unwrap();
-		String::from_utf8(w).unwrap()
-	}
+}
+
+impl<'a, T> Ast<'a, T> {
 	pub(crate) fn from(id: i64) -> Self {
 		Ast {
             id,
@@ -80,7 +78,7 @@ pub enum AstNode<'a, T> {
 	Token(Token<'a>),
 }
 
-impl<'a, T> AstNode<'a, T> {
+impl<'a, T> ToDoc for AstNode<'a, T> {
 	fn to_doc(&self) -> Doc<BoxDoc<()>> {
 		match self {
 			AstNode::Ast(ast) => ast.to_doc(),
@@ -90,6 +88,9 @@ impl<'a, T> AstNode<'a, T> {
 				.append(Doc::as_string(token.val)),
 		}
 	}
+}
+
+impl<'a, T> AstNode<'a, T> {
 	pub fn as_ast(&self) -> &Ast<T> {
 		if let AstNode::Ast(ast) = &self {
 			ast

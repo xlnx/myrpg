@@ -1,15 +1,67 @@
 use std::collections::{HashSet, VecDeque};
 
+use pretty::{Doc, *};
+
 use super::ast::{Ast, Token};
 use super::rule::Rule;
+use super::util::{decode, ToDoc};
 
-#[derive(Debug)]
 pub struct Item<'a, T> {
 	pub rule: &'a Rule<T>,
 	pub pos: usize,
 }
 
+impl<'a, T> std::fmt::Debug for Item<'a, T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		let mut item = String::new();
+		let mut idx = self.pos as i32;
+		for patt in self.rule.patts.iter() {
+			if idx == 0 {
+				item += ". ";
+			}
+			item += &format!("{} ", decode(*patt));
+			idx -= 1;
+		}
+		if idx == 0 {
+			item += ". ";
+		}
+		write!(f, "{} -> {}", decode(self.rule.src), item)
+	}
+}
+
 pub type Closure<'a, T> = HashSet<Item<'a, T>>;
+
+impl<'a, T> ToDoc for Closure<'a, T> {
+	fn to_doc(&self) -> Doc<BoxDoc<()>> {
+		Doc::Newline.nest(2).append(
+			Doc::intersperse(
+				self.iter().enumerate().map(|x| {
+					let (_i, item) = x;
+					format!("{:?}", item)
+				}),
+				Doc::Newline,
+			)
+			.nest(2)
+			.group(),
+		)
+	}
+}
+
+impl<'a, T> ToDoc for Vec<Closure<'a, T>> {
+	fn to_doc(&self) -> Doc<BoxDoc<()>> {
+		Doc::as_string("Vec<Closure>").append(Doc::Newline).append(
+			Doc::intersperse(self.iter().enumerate()
+			.map(|x| {
+				let (i, item) = x;
+				item.to_doc();
+				Doc::as_string(format!("{}", i))
+				.append(item.to_doc())
+			}), Doc::Newline)
+				// .nest(2)
+				// .group(),
+		)
+	}
+}
 
 #[derive(Debug)]
 pub struct ParseEnv<'a, T> {

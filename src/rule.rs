@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
-use std::collections::{HashSet};
 
 use super::ast::{Ast, AstNode};
 use super::util::{decode, hash};
 
 pub struct Rule<T> {
+	pub src: i64,
 	pub ast_cnt: u16,
 	pub term_cnt: u16,
 	pub patts: Vec<i64>,
@@ -14,6 +15,7 @@ pub struct Rule<T> {
 impl<T> Rule<T> {
 	pub fn from(ss: &Vec<&str>, set: &HashSet<i64>) -> Self {
 		let mut rule = Rule {
+			src: 0,
 			ast_cnt: 0,
 			term_cnt: 0,
 			patts: vec![],
@@ -57,11 +59,7 @@ impl<T> Rule<T> {
 
 impl<T> std::fmt::Debug for Rule<T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		let data = self
-			.patts
-			.iter()
-			.map(|x| decode(*x))
-			.collect::<Vec<&str>>();
+		let data = self.patts.iter().map(|x| decode(*x)).collect::<Vec<&str>>();
 		write!(f, "Rule {:?}", data)
 	}
 }
@@ -89,11 +87,12 @@ pub struct Param<T> {
 }
 
 impl<T> Param<T> {
-	pub fn from(item: &str, rules: Vec<Rule<T>>) -> Self {
-		Param {
-			item: !hash(item),
-			rules,
+	pub fn from(item: &str, mut rules: Vec<Rule<T>>) -> Self {
+		let item = !hash(item);
+		for rule in rules.iter_mut() {
+			rule.src = item;
 		}
+		Param { item, rules }
 	}
 }
 
