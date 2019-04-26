@@ -1,6 +1,3 @@
-// #![feature(trace_macros)]
-// trace_macros!(true);
-
 use myrpg::{ast::*, wrapper::Callback, LRParser, *};
 
 lang! {
