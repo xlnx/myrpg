@@ -88,7 +88,7 @@ macro_rules! lang {
 				dest_callback!($res $terms $patts $attr $cb);
 			}
 			__Dummy::apply()
-		}.wrap())
+		})
 		// Some(cb.wrap())
 	} };
 

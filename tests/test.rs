@@ -1,4 +1,4 @@
-use myrpg::{ast::*, wrapper::Callback, LRParser, *};
+use myrpg::{ast::*, LRParser, *};
 
 lang! {
 
