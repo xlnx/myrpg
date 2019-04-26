@@ -40,10 +40,19 @@ pub enum ActionType {
 	Hold,
 }
 
-#[derive(Debug)]
 pub struct Action<'a, T> {
 	pub flag: ActionType,
 	pub rule: Option<&'a Rule<T>>,
+}
+
+impl<'a, T> std::fmt::Debug for Action<'a, T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		write!(
+			f,
+			"Action {{ flag: {:?}, rule: {:?} }}",
+			self.flag, self.rule
+		)
+	}
 }
 
 impl<'a, T> Action<'a, T> {

@@ -7,7 +7,8 @@ use regex::{Regex, RegexSet};
 extern crate ref_thread_local;
 
 mod util;
-use util::{hash, BOTTOM, EPS};
+#[allow(unused_imports)]
+use util::{decode, hash, BOTTOM, EPS};
 
 pub mod ast;
 use ast::{Ast, AstNode, Token};
@@ -681,7 +682,7 @@ where
 		// println!("term_stack = {:?}", term_stack);
 		// println!(
 		//     "new_asts = {:?}",
-		//     new_asts.iter().map(|x| &x.0).collect::<Vec<&Ast>>()
+		//     new_asts.iter().map(|x| &x.0).collect::<Vec<&Ast<T::Output>>>()
 		// );
 		// println!("states = {:?}", states);
 		// // println!("action = {:?}", self.action[state]);

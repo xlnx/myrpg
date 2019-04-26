@@ -26,40 +26,40 @@ lang! {
 		Value
 	],
 	Value => [
-		Expr => |child: &Ast<_>| -> _ {
+		Expr => |child| -> _ {
 			let res = child.gen().unwrap();
 			println!("{}", res);
 			Some(res)
 		}
 	],
 	Expr => [
-		Expr Add Term => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+		Expr Add Term => |lhs, _, rhs| -> _ {
 			Some(lhs.gen().unwrap() + rhs.gen().unwrap())
 		},
-		Expr Sub Term => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+		Expr Sub Term => |lhs, _, rhs| -> _ {
 			Some(lhs.gen().unwrap() - rhs.gen().unwrap())
 		},
-		Term => |child: &Ast<_>| -> _ {
+		Term => |child| -> _ {
 			child.gen()
 		}
 	],
 	Term => [
-		Term Mul Factor => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+		Term Mul Factor => |lhs, _, rhs| -> _ {
 			println!("{}", lhs.as_string(10));
 			Some(lhs.gen().unwrap() * rhs.gen().unwrap())
 		},
-		Term Div Factor => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+		Term Div Factor => |lhs, _, rhs| -> _ {
 			Some(lhs.gen().unwrap() / rhs.gen().unwrap())
 		},
-		Factor => |child: &Ast<_>| -> _ {
+		Factor => |child| -> _ {
 			child.gen()
 		}
 	],
 	Factor => [
-		Number => |tok: &Token| -> Option<i32> {
+		Number => |tok| -> Option<i32> {
 			Some(tok.val.parse().unwrap())
 		},
-		LBracket Expr RBracket => |_, child: &Ast<_>, _| -> _ {
+		LBracket Expr RBracket => |_, child, _| -> _ {
 			child.gen()
 		}
 	]

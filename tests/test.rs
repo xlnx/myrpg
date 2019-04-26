@@ -22,40 +22,40 @@ lang! {
 		Value
 	],
 	Value => [
-		Expr => |child: &Ast<_>| -> _ {
+		Expr => |child| -> _ {
 			let res = child.gen().unwrap();
 			println!("{}", res);
 			Some(res)
 		}
 	],
 	Expr => [
-		Expr Add Term => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+		Expr Add Term => |lhs, _, rhs| -> _ {
 			Some(lhs.gen().unwrap() + rhs.gen().unwrap())
 		},
-		Expr Sub Term => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+		Expr Sub Term => |lhs, _, rhs| -> _ {
 			Some(lhs.gen().unwrap() - rhs.gen().unwrap())
 		},
-		Term => |child: &Ast<_>| -> _ {
+		Term => |child| -> _ {
 			child.gen()
 		}
 	],
 	Term => [
-		Term Mul Factor => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+		Term Mul Factor => |lhs, _, rhs| -> _ {
 			println!("{}", lhs.as_string(10));
 			Some(lhs.gen().unwrap() * rhs.gen().unwrap())
 		},
-		Term Div Factor => |lhs: &Ast<_>, _, rhs: &Ast<_>| -> _ {
+		Term Div Factor => |lhs, _, rhs| -> _ {
 			Some(lhs.gen().unwrap() / rhs.gen().unwrap())
 		},
-		Factor => |child: &Ast<_>| -> _ {
+		Factor => |child| -> _ {
 			child.gen()
 		}
 	],
 	Factor => [
-		Number => |tok: &Token| -> Option<i32> {
+		Number => |tok| -> Option<i32> {
 			Some(tok.val.parse().unwrap())
 		},
-		LBracket Expr RBracket => |_, child: &Ast<_>, _| -> _ {
+		LBracket Expr RBracket => |_, child, _| -> _ {
 			child.gen()
 		}
 	]
@@ -69,4 +69,50 @@ fn test_math_expr() {
 	let res = parser.parse("3 * (1 + 2)");
 
 	assert_eq!(res, Ok(Some(9)));
+}
+
+lang! {
+
+	Name = MoveInReduce
+	ValueType = i32
+
+	;;
+
+	Number => r"[0-9]+",
+	Neg => r"-",
+	Mul => r"\*"
+
+	;;
+
+	S => [
+		Value
+	],
+	Value => [
+		Expr => |child| -> _ {
+			let res = child.gen().unwrap();
+			println!("{}", res);
+			Some(res)
+		}
+	],
+	Expr => [
+		Expr Mul Expr => |lhs, _, rhs| -> _ {
+			Some(lhs.gen().unwrap() * rhs.gen().unwrap())
+		},
+		Neg Expr => |_, child| -> _ {
+			Some(-child.gen().unwrap())
+		},
+		Number => |tok| -> _ {
+			Some(tok.val.parse().unwrap())
+		}
+	]
+
+}
+
+#[test]
+fn test_move_in_reduce() {
+	let parser = LRParser::<MoveInReduce>::new();
+
+	let res = parser.parse("- 3 * 2");
+
+	assert_eq!(res, Ok(Some(-6)));
 }
