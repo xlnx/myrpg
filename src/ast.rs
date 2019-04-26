@@ -9,9 +9,18 @@ pub struct Token<'a> {
 	pub pos: (u32, u32),
 }
 
+impl<'a> Token<'a> {
+	pub fn as_str(&self) -> &'a str {
+		self.val
+	}
+	pub fn as_rule(&self) -> &'static str {
+		decode(self.id)
+	}
+}
+
 impl<'a> std::fmt::Debug for Token<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{:?}={:?}", decode(self.id), self.val)
+		write!(f, "{}: {:?}", decode(self.id), self.val)
 	}
 }
 
@@ -29,7 +38,7 @@ impl<'a, T> Ast<'a, T> {
 
 impl<'a, T> std::fmt::Debug for Ast<'a, T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{}", self.to_string(4))
+		write!(f, "{}", self.as_string(4))
 	}
 }
 
@@ -49,7 +58,7 @@ impl<'a, T> Ast<'a, T> {
 			doc
 		}
 	}
-	pub fn to_string(&self, width: usize) -> String {
+	pub fn as_string(&self, width: usize) -> String {
 		let mut w = Vec::new();
 		self.to_doc().render(width, &mut w).unwrap();
 		String::from_utf8(w).unwrap()

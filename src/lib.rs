@@ -3,6 +3,9 @@ use std::marker::PhantomData;
 
 use regex::{Regex, RegexSet};
 
+#[macro_use]
+extern crate ref_thread_local;
+
 mod util;
 use util::{hash, BOTTOM, EPS};
 
@@ -21,6 +24,8 @@ pub mod lang;
 
 mod index;
 use index::IndexMutOrInsert;
+
+pub use proc_callback::*;
 
 fn make_first<T>(first: &mut HashMap<i64, HashSet<i64>>, params: &Vec<Param<T>>) {
 	let mut add_sub: bool;
@@ -440,8 +445,8 @@ where
 								add_sub = true;
 								match self.action[state].get(&term) {
 									Some(val) => match val.flag {
-										ActionType::Accept => panic!(),
-										ActionType::MoveIn => panic!(),
+										ActionType::Accept => panic!("Invalid Grammar"),
+										ActionType::MoveIn => panic!("Invalid Grammar"),
 										ActionType::Reduce => {
 											self.action[state].insert(
 												term,
@@ -660,7 +665,7 @@ where
 		new_asts.push_back((ast, *self.parent_of.get(&rule).unwrap()));
 	}
 
-	fn do_match(&self, term: i64, env: &mut ParseEnv<'a, T::Output>) -> bool {
+	fn do_match(&self, term: i64, env: &mut ParseEnv<'a, T::Output>) -> Result<bool, String> {
 		let ParseEnv {
 			states,
 			ast_stack,
@@ -687,41 +692,43 @@ where
 		//     self.action[state].get(&term)
 		// );
 		match self.action[state].get(&term) {
-			Some(action) => match action.flag {
-				ActionType::MoveIn => {
-					states.push_back(*self.goto[state].get(&term).unwrap());
-					if term >= 0 {
-						term_stack.push_back(tokens.pop_front().unwrap());
-					} else {
-						ast_stack.push_back(new_asts.pop_back().unwrap().0);
+			Some(action) => {
+				match action.flag {
+					ActionType::MoveIn => {
+						states.push_back(*self.goto[state].get(&term).unwrap());
+						if term >= 0 {
+							term_stack.push_back(tokens.pop_front().unwrap());
+						} else {
+							ast_stack.push_back(new_asts.pop_back().unwrap().0);
+						}
 					}
-				}
-				ActionType::Hold => {
-					states.push_back(0);
-					ast_stack.push_back(Ast::from(0));
-					self.do_merge(action.rule.unwrap(), env);
-				}
-				ActionType::Accept => {
-					if ast_stack.len() == 1
-						&& tokens.is_empty() && new_asts.is_empty()
-						&& term_stack.is_empty()
-					{
-						return true;
+					ActionType::Hold => {
+						states.push_back(0);
+						ast_stack.push_back(Ast::from(0));
+						self.do_merge(action.rule.unwrap(), env);
 					}
-				}
-				ActionType::Reduce => {
-					self.do_merge(action.rule.unwrap(), env);
-				}
-			},
+					ActionType::Accept => {
+						if ast_stack.len() == 1
+							&& tokens.is_empty() && new_asts.is_empty()
+							&& term_stack.is_empty()
+						{
+							return Ok(true);
+						}
+					}
+					ActionType::Reduce => {
+						self.do_merge(action.rule.unwrap(), env);
+					}
+				};
+				Ok(false)
+			}
 			None => {
 				let Token { val, pos, .. } = tokens.front().unwrap();
-				panic!(format!("Unexpected Token: {:?} at {:?}", val, pos));
+				Err(format!("Unexpected Token: {:?} at {:?}", val, pos))
 			}
 		}
-		false
 	}
 
-	pub fn parse<'b>(&self, text: &'b str) {
+	pub fn parse<'b>(&self, text: &'b str) -> Result<Option<T::Output>, String> {
 		let mut chunk = TextChunk::from(text);
 		// let token = self.next(&mut chunk);
 		let mut env = ParseEnv::new();
@@ -743,8 +750,10 @@ where
 					}
 				}
 			};
-			if self.do_match(term, &mut env) {
-				break;
+			match self.do_match(term, &mut env) {
+				Ok(true) => break,
+				Err(err) => return Err(err),
+				_ => {}
 			}
 		}
 
@@ -753,6 +762,7 @@ where
 			..
 		} = env;
 		let ast = deq_ast.remove(0).unwrap();
-		(*ast.rule.handler)(&ast);
+
+		Ok((*ast.rule.handler)(&ast))
 	}
 }

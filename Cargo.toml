@@ -8,3 +8,7 @@ edition = "2018"
 regex = "1.1.6"
 ref_thread_local = "0.0.0"
 pretty = "0.5.2"
+proc_callback = { path = "./src/proc_callback" }
+
+[lib]
+name = "myrpg"

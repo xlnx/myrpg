@@ -1,10 +1,10 @@
 use std::collections::{HashMap, *};
 use std::hash::*;
 
-use ref_thread_local::RefThreadLocal;
-
 pub const EPS: i64 = 0i64;
 pub const BOTTOM: i64 = 1i64;
+
+use ref_thread_local::RefThreadLocal;
 
 ref_thread_local! {
 	static managed SYMBOL: HashMap<i64, String> = HashMap::new();
@@ -21,14 +21,14 @@ pub fn hash(x: &str) -> i64 {
 	val
 }
 
-pub fn decode(val: i64) -> String {
+pub fn decode(val: i64) -> &'static str {
 	match val {
-		EPS => return String::from("EPS"),
-		BOTTOM => return String::from("BOTTOM"),
+		EPS => return &"EPS",
+		BOTTOM => return &"BOTTOM",
 		_ => {}
 	}
 	match SYMBOL.borrow().get(&val) {
-		Some(val) => String::from(val.as_str()),
+		Some(val) => unsafe { &*(val.as_str() as *const str) },
 		_ => {
 			panic!("unknown value");
 		}

@@ -61,7 +61,7 @@ impl<T> std::fmt::Debug for Rule<T> {
 			.patts
 			.iter()
 			.map(|x| decode(*x))
-			.collect::<Vec<String>>();
+			.collect::<Vec<&str>>();
 		write!(f, "Rule {:?}", data)
 	}
 }
