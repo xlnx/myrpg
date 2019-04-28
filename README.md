@@ -1,3 +1,7 @@
+# Grammar
+
+SLR
+
 # Usage
 
 
@@ -23,12 +27,9 @@ lang! {
 	;;
 
 	S => [
-		Value
-	],
-	Value => [
 		Expr => |child| -> _ {
 			let res = child.gen().unwrap();
-			println!("{}", res);
+			println!("{:?}", child);
 			Some(res)
 		}
 	],
@@ -45,7 +46,6 @@ lang! {
 	],
 	Term => [
 		Term Mul Factor => |lhs, _, rhs| -> _ {
-			println!("{}", lhs.as_string(10));
 			Some(lhs.gen().unwrap() * rhs.gen().unwrap())
 		},
 		Term Div Factor => |lhs, _, rhs| -> _ {
