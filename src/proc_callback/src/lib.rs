@@ -22,7 +22,7 @@ pub fn dest_callback(input: TokenStream) -> TokenStream {
     let mut input = proc_macro2::TokenStream::from(input).into_iter();
     let res = to_ident(input.next().unwrap());
     let terms = input.next().unwrap();
-    let patts = input.next().unwrap();
+    let symbols = input.next().unwrap();
     let attr = input.next().unwrap();
     let callback = input.next().unwrap();
 
@@ -30,8 +30,8 @@ pub fn dest_callback(input: TokenStream) -> TokenStream {
 
         // println!("{:?}", attr);
 
-        if let (TokenTree::Group(terms), TokenTree::Group(patts), TokenTree::Group(callback)) =
-            (terms, patts, callback)
+        if let (TokenTree::Group(terms), TokenTree::Group(symbols), TokenTree::Group(callback)) =
+            (terms, symbols, callback)
         {
 
             if let Some(attr) = attr.stream().into_iter().next() {
@@ -45,7 +45,7 @@ pub fn dest_callback(input: TokenStream) -> TokenStream {
                             }
                         };
                         output.into()
-                    },
+                    }
                     any @ _ => {
                         panic!(format!("Unknown wrapping attribute: {}", any));
                     }
@@ -63,15 +63,15 @@ pub fn dest_callback(input: TokenStream) -> TokenStream {
                     .map(to_ident)
                     .map(|x| x.to_string())
                     .collect();
-                let patts: Vec<_> = patts
+                let symbols: Vec<_> = symbols
                     .stream()
                     .into_iter()
                     .map(to_ident)
                     .map(|x| x.to_string())
                     .collect();
                 let mut idx = 0usize;
-                for patt in patts.iter() {
-                    if terms.contains(patt) {
+                for symbol in symbols.iter() {
+                    if terms.contains(symbol) {
                         // is terminal
                         type_param = quote! { #type_param #tok, };
                         dest = quote! { #dest ast.childs[#idx].as_token(), };

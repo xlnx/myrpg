@@ -1,70 +1,73 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::marker::PhantomData;
 
-use regex::{Regex, RegexSet};
 
+use regex::{Regex, RegexSet};
 #[macro_use]
 extern crate ref_thread_local;
 
+mod symbol;
+use symbol::*;
+
 mod util;
 #[allow(unused_imports)]
-use util::{decode, hash, AsString, BOTTOM, EPS};
+use util::*;
 
 pub mod ast;
-use ast::{Ast, AstNode, Token};
+use ast::*;
 
 pub mod wrapper;
 
 mod rule;
-use rule::{Param, Rule};
+use rule::*;
 
 mod parse_util;
-use parse_util::{Action, ActionType, Closure, Item, ParseEnv};
+use parse_util::*;
 
 pub mod lang;
 
 mod index;
-use index::IndexMutOrInsert;
+use index::*;
 
 pub use proc_callback::*;
 
-fn make_first<T>(first: &mut HashMap<i64, HashSet<i64>>, params: &Vec<Param<T>>) {
+fn make_first<T>(first: &mut HashMap<Symbol, HashSet<Symbol>>, grammar: &Grammar<T>) {
 	let mut add_sub: bool;
 	loop {
 		add_sub = false;
-		for param in params.iter() {
+		for (src, rule_set) in grammar.iter() {
 			// i am curr param
-			let my_firsts = first.get(&param.item).unwrap();
+			let my_firsts = first.get(&src).unwrap();
 			let mut new_firsts = vec![];
 			// each rule generated my me
-			for rule in param.rules.iter() {
+			for rule in rule_set.iter() {
 				// this rule generates eps
-				let mut has_empty = false;
-				// each elem in this rule
-				for elem in rule.patts.iter() {
+				let mut has_empty = rule.symbols.len() == 0;
+				// each symbol in this rule
+				for symbol in rule.symbols.iter() {
 					has_empty = false;
-					let firsts = first.get(elem).unwrap();
-					// each elem of first[elem]
+					let firsts = first.get(symbol).unwrap();
+					// each symbol of first[symbol]
 					for first_elem in firsts.iter() {
-						if *first_elem == EPS {
-							// this elem generates eps
+						if *first_elem == BOTTOM {
+							// this symbol generates eps
 							has_empty = true;
 						} else if !my_firsts.contains(first_elem) {
 							new_firsts.push(*first_elem);
 						}
 					}
-					// this elem cant generate eps
+					// this symbol cant generate eps
 					if !has_empty {
 						break;
 					}
 				}
 				// this rule generates eps
-				if has_empty && !my_firsts.contains(&EPS) {
-					new_firsts.push(EPS);
+				if has_empty && !my_firsts.contains(&BOTTOM) {
+					new_firsts.push(BOTTOM);
 				}
 			}
 			// now add new firsts into first[me]
-			let my_firsts_mut = first.get_mut(&param.item).unwrap();
+			let my_firsts_mut = first.get_mut(&src).unwrap();
 			for first_elem in new_firsts.iter() {
 				my_firsts_mut.insert(*first_elem);
 				add_sub = true;
@@ -78,49 +81,49 @@ fn make_first<T>(first: &mut HashMap<i64, HashSet<i64>>, params: &Vec<Param<T>>)
 }
 
 fn make_follow<T>(
-	first: &HashMap<i64, HashSet<i64>>,
-	follow: &mut HashMap<i64, HashSet<i64>>,
-	params: &Vec<Param<T>>,
+	first: &HashMap<Symbol, HashSet<Symbol>>,
+	follow: &mut HashMap<Symbol, HashSet<Symbol>>,
+	grammar: &Grammar<T>,
 ) {
 	let mut add_sub: bool;
 	loop {
 		add_sub = false;
-		for param in params.iter() {
-			for rule in param.rules.iter() {
-				for (curr_elem, prev_elem) in rule
-					.patts
+		for (src, rule_set) in grammar.iter() {
+			for rule in rule_set.iter() {
+				for (this_symbol, prev_symbol) in rule
+					.symbols
 					.iter()
 					.skip(1)
 					.rev()
-					.zip(rule.patts.iter().rev().skip(1))
+					.zip(rule.symbols.iter().rev().skip(1))
 				{
-					if *prev_elem < 0i64 {
+					if prev_symbol.is_non_terminal() {
 						let mut new_follows = vec![];
-						if *curr_elem < 0i64 {
-							let curr_first = first.get(curr_elem).unwrap();
-							let prev_follow = follow.get(prev_elem).unwrap();
+						if this_symbol.is_non_terminal() {
+							let this_first = first.get(this_symbol).unwrap();
+							let prev_follow = follow.get(prev_symbol).unwrap();
 
 							// add all first[curr] to follow[prev]
-							for first_elem in curr_first.iter() {
-								if *first_elem != EPS && !prev_follow.contains(first_elem) {
+							for first_elem in this_first.iter() {
+								if *first_elem != BOTTOM && !prev_follow.contains(first_elem) {
 									new_follows.push(*first_elem);
 								}
 							}
 							// if this elem yields eps
-							if curr_first.contains(&EPS) {
+							if this_first.contains(&BOTTOM) {
 								// add all follow[me] to follow[prev]
-								for follow_elem in follow.get(&param.item).unwrap() {
+								for follow_elem in follow.get(&src).unwrap() {
 									if !prev_follow.contains(&follow_elem) {
 										new_follows.push(*follow_elem);
 									}
 								}
 							}
-						} else if !follow.get(prev_elem).unwrap().contains(curr_elem) {
-							new_follows.push(*curr_elem);
+						} else if !follow.get(prev_symbol).unwrap().contains(this_symbol) {
+							new_follows.push(*this_symbol);
 						}
 
 						// add all new follows to follow[prev]
-						let prev_follow_mut = follow.get_mut(prev_elem).unwrap();
+						let prev_follow_mut = follow.get_mut(prev_symbol).unwrap();
 						for follow in new_follows {
 							prev_follow_mut.insert(follow);
 							add_sub = true;
@@ -128,11 +131,11 @@ fn make_follow<T>(
 					}
 				}
 
-				let back = rule.patts.iter().rev().next().unwrap();
+				let back = rule.symbols.iter().rev().next().unwrap();
 				let back_follow = follow.get(back).unwrap();
 				let mut new_follows = vec![];
-				if *back < 0i64 {
-					for follow_elem in follow.get(&param.item).unwrap() {
+				if back.is_non_terminal() {
+					for follow_elem in follow.get(&src).unwrap() {
 						if !back_follow.contains(follow_elem) {
 							new_follows.push(*follow_elem);
 						}
@@ -148,6 +151,64 @@ fn make_follow<T>(
 		// this closure follow is full
 		if !add_sub {
 			break;
+		}
+	}
+}
+
+fn make_closures<'a, T>(
+	closures: &mut Vec<Closure<'a, T>>,
+	goto: &mut Vec<HashMap<Symbol, usize>>,
+	grammar: &'a Grammar<T>,
+) {
+	let mut origin = Closure::new(grammar);
+	let rule = grammar.origin();
+	origin.insert(Item { rule, pos: 0 });
+
+	let mut incoming = VecDeque::new();
+	incoming.push_back(origin);
+
+	while let Some(closure) = incoming.pop_front() {
+		let expanded = closure.expanded();
+		let curr_state = closures.len();
+		closures.push(closure);
+		let mut following = HashMap::<Symbol, Closure<_>>::new();
+		for item in expanded.into_iter() {
+			if let Some(next_item) = item.next() {
+				let symbol = item.symbol().unwrap();
+				if following.contains_key(&symbol) {
+					following.get_mut(&symbol).unwrap().insert(next_item);
+				} else {
+					let mut new_closure = Closure::new(grammar);
+					new_closure.insert(next_item);
+					following.insert(symbol, new_closure);
+				}
+			}
+		}
+		// println!("{:?}", following);
+		goto.push(HashMap::new());
+		for (symbol, new_closure) in following.into_iter() {
+			if closures.contains(&new_closure) {
+				let new_state = closures
+					.iter()
+					.enumerate()
+					.find(|x| x.1 == &new_closure)
+					.unwrap()
+					.0;
+				goto[curr_state].insert(symbol, new_state);
+			} else if incoming.contains(&new_closure) {
+				let new_state = closures.len()
+					+ incoming
+						.iter()
+						.enumerate()
+						.find(|x| x.1 == &new_closure)
+						.unwrap()
+						.0;
+				goto[curr_state].insert(symbol, new_state);
+			} else {
+				let new_state = closures.len() + incoming.len();
+				goto[curr_state].insert(symbol, new_state);
+				incoming.push_back(new_closure);
+			}
 		}
 	}
 }
@@ -169,18 +230,12 @@ pub trait LRLang {
 
 #[allow(dead_code)]
 pub struct LRParser<'a, T: LRLang> {
-	lex_rules: Vec<(i64, Regex)>,
+	lex_rules: Vec<(Symbol, Regex)>,
 	lex_rules_set: RegexSet,
-	params: Vec<Param<T::Output>>,
-	terms: Vec<i64>,
-	first: HashMap<i64, HashSet<i64>>,
-	follow: HashMap<i64, HashSet<i64>>,
-	parent_of: HashMap<&'a Rule<T::Output>, i64>,
-	param_of: HashMap<i64, &'a Param<T::Output>>,
-	index_of: HashMap<&'a Rule<T::Output>, usize>,
-	closures: Vec<Closure<'a, T::Output>>,
-	action: Vec<HashMap<i64, Action<'a, T::Output>>>,
-	goto: Vec<HashMap<i64, usize>>,
+
+	grammar: Grammar<T::Output>,
+	symbols: Vec<Symbol>,
+	action: Vec<HashMap<Symbol, Action<'a, T::Output>>>,
 	phantom: PhantomData<T>,
 }
 
@@ -199,435 +254,165 @@ impl<'a, T> LRParser<'a, T>
 where
 	T: LRLang,
 {
-	fn find_empty(&self, val: i64) -> Option<&'a Rule<T::Output>> {
-		let param = self.param_of.get(&val).unwrap();
-		for rule in param.rules.iter() {
-			if rule.patts.len() == 1 && rule.patts[0] == EPS {
-				return Some(rule);
-			} else {
-				let mut is_empty = true;
-				for elem in rule.patts.iter() {
-					is_empty = self.first.get(&elem).unwrap().contains(&EPS);
-					if !is_empty {
-						break;
-					}
-				}
-				if is_empty && rule.patts[0] != val {
-					return self.find_empty(rule.patts[0]);
-				}
-			}
+	pub fn format_actions(&self) -> String {
+		let width = 6;
+		let mut res = String::new();
+		res += &format!("{:<width$}", "", width = width);
+		for symbol in self.symbols.iter() {
+			res += &format!("{:<width$?}", symbol, width = width);
 		}
-		None
-	}
-	fn register_sub(&mut self, val: i64, rule: Option<&'a Rule<T::Output>>, state: usize) {
-		if let None = self.action[state].get(&val) {
-			self.action[state].insert(
-				val,
-				Action {
-					flag: ActionType::Hold,
-					rule: rule,
-				},
-			);
-			self.goto[state].insert(val, self.closures.len());
-			if let Some(param) = self.param_of.get(&val) {
-				for rule in param.rules.iter() {
-					for elem in rule.patts.iter() {
-						self.register_sub(*elem, Some(rule), state);
-						if !self.first[elem].contains(&EPS) {
-							break;
-						}
-					}
-				}
-			}
-		}
-	}
-
-	fn expand_closure(&mut self, closure: &Closure<T::Output>, state: usize) {
-		for item in closure.iter() {
-			if item.pos > 0
-				&& self
-					.first
-					.get(&item.rule.patts[item.pos - 1])
-					.unwrap()
-					.contains(&EPS)
-			{
-				if item.rule.patts.len() != item.pos {
-					self.register_sub(
-						item.rule.patts[item.pos],
-						self.find_empty(item.rule.patts[item.pos - 1]),
-						state,
-					);
+		res += "\n";
+		for (state, line) in self.action.iter().enumerate() {
+			res += &format!("{:<width$}", state, width = width);
+			for symbol in self.symbols.iter() {
+				if let Some(action) = line.get(symbol) {
+					res += &format!("{:<width$?}", action, width = width);
 				} else {
-					for i in 0..self.terms.len() {
-						let term = self.terms[i];
-						if let None = self.action[state].get(&term) {
-							let rule = self.find_empty(item.rule.patts[item.pos - 1]);
-							self.action[state].insert(
-								term,
-								Action {
-									flag: ActionType::Hold,
-									rule: rule,
-								},
-							);
-							self.goto[state].insert(term, self.closures.len());
-						}
-					}
+					res += &format!("{:<width$}", "", width = width);
 				}
 			}
+			res += "\n"
 		}
-	}
-
-	fn make_closure(&mut self, mut closure: Closure<'a, T::Output>, state: usize) {
-		self.expand_closure(&closure, state);
-
-		let mut gen_sub: bool;
-		loop {
-			gen_sub = false;
-
-			let mut items = vec![];
-			for item in closure.iter() {
-				if item.rule.patts.len() != item.pos {
-					let mut pos = item.pos;
-					loop {
-						if let Some(param) = self.param_of.get(&item.rule.patts[pos]) {
-							for rule in param.rules.iter() {
-								if rule.patts.len() != 1 || rule.patts[0] != EPS {
-									let item = Item { rule: rule, pos: 0 };
-									if !closure.contains(&item) {
-										items.push(item);
-									}
-								}
-							}
-						}
-						if !self
-							.first
-							.get(&item.rule.patts[pos])
-							.unwrap()
-							.contains(&EPS) || {
-							pos += 1;
-							pos
-						} == item.pos
-						{
-							break;
-						}
-					}
-				}
-			}
-			for item in items.into_iter() {
-				closure.insert(item);
-				gen_sub = true;
-			}
-
-			if !gen_sub {
-				break;
-			}
-		}
-
-		// println!("===>   {:?}", closure);
-		self.closures.push(closure);
-		self.goto.push(HashMap::new());
-		self.action.push(HashMap::new());
-	}
-
-	fn init(&mut self) {
-		let mut origin: Closure<T::Output> = Closure::new();
-		unsafe {
-			let rule: *const Rule<T::Output> = &self.params[0].rules[0];
-			origin.insert(Item {
-				rule: &*rule,
-				pos: 0,
-			});
-		}
-		self.make_closure(origin, 0);
-
-		let mut add_sub: bool;
-		loop {
-			add_sub = false;
-			for state in 0..self.closures.len() {
-				for item in self.closures[state].iter() {
-					if item.rule.patts.len() == item.pos {
-						for elem in self
-							.follow
-							.get(&self.parent_of.get(&item.rule).unwrap())
-							.unwrap()
-							.iter()
-						{
-							if {
-								if let Some(Action {
-									flag: ActionType::MoveIn,
-									..
-								}) = self.action[state].get(elem)
-								{
-									false
-								} else {
-									true
-								}
-							} {
-								self.action[state].insert(
-									*elem,
-									Action {
-										flag: if item.rule as *const Rule<T::Output>
-											== &self.params[0].rules[0]
-										{
-											ActionType::Accept
-										} else {
-											ActionType::Reduce
-										},
-										rule: Some(item.rule),
-									},
-								);
-								// if let Some(dst) = self.goto[state].get(&item.rule.src) {
-								// 	let dst = *dst;
-								// 	self.goto[state].insert(*elem, dst);
-								// }
-							}
-						}
-					}
-				}
-				for i in 0..self.terms.len() {
-					let term = self.terms[i];
-					if {
-						if let None = self.goto[state].get(&term) {
-							true
-						} else {
-							false
-						}
-					} || if let Some(Action {
-						flag: ActionType::Hold,
-						..
-					}) = self.action[state].get(&term)
-					{
-						true
-					} else {
-						false
-					} {
-						let mut new = Closure::new();
-						for item in self.closures[state].iter() {
-							if item.pos != item.rule.patts.len()
-								&& item.rule.patts[item.pos] == term
-							{
-								// println!("Here {}", state);
-								new.insert(Item {
-									rule: item.rule,
-									pos: item.pos + 1,
-								});
-							}
-						}
-						if !new.is_empty() {
-							let mut is_sub = false;
-							let mut rule_ptr = None;
-
-							let mut dest_state: usize = 0;
-							for dest_i in 0..self.closures.len() {
-								is_sub = true;
-								for item in new.iter() {
-									if rule_ptr.is_none()
-										|| self.index_of.get(&item.rule).unwrap()
-											< self.index_of.get(&rule_ptr.unwrap()).unwrap()
-									{
-										rule_ptr = Some(item.rule);
-									}
-									if !self.closures[dest_i].contains(&item) {
-										is_sub = false;
-										break;
-									}
-								}
-								dest_state = dest_i;
-								if is_sub {
-									break;
-								}
-							}
-							if is_sub {
-								self.goto[state].insert(term, dest_state);
-								self.action[state].insert(term, Action::from(ActionType::MoveIn));
-								let this: *const Self = self;
-								unsafe {
-									self.expand_closure(&(*this).closures[dest_state], state);
-								}
-							} else {
-								self.goto[state].insert(term, self.closures.len());
-								self.make_closure(new, state);
-								add_sub = true;
-								match self.action[state].get(&term) {
-									Some(val) => match val.flag {
-										ActionType::Accept => panic!("Invalid Grammar"),
-										ActionType::MoveIn => panic!("Invalid Grammar"),
-										ActionType::Reduce => {
-											self.action[state].insert(
-												term,
-												Action {
-													flag: ActionType::MoveIn,
-													rule: rule_ptr,
-												},
-											);
-										}
-										_ => {}
-									},
-									None => {
-										self.action[state]
-											.insert(term, Action::from(ActionType::MoveIn));
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-
-			if !add_sub {
-				break;
-			}
-		}
+		res
 	}
 
 	pub fn new() -> Self {
 		let (lex, lang) = T::new();
 
-		// make terms
+		// make symbols
 		let mut lex_rules: HashMap<_, String> = HashMap::new();
-		let mut terms = vec![];
+		let mut symbols = vec![];
 		for (lex_name, lex_patt) in lex.iter() {
-			let ha = hash(lex_name);
-			terms.push(ha);
-			lex_rules.insert(ha, format!(r"^\s*({})", lex_patt));
+			let symbol = Symbol::from(lex_name).as_terminal();
+			symbols.push(symbol);
+			lex_rules.insert(symbol, format!(r"^\s*({})", lex_patt));
 		}
-		let terms_set: HashSet<i64> = terms.iter().map(|x| *x).collect();
+		let terms_set: HashSet<Symbol> = symbols.iter().map(|x| *x).collect();
 
 		// make params
-		let mut params = vec![];
+		let mut grammar = Grammar::new();
 		for (lang_item, lang_rules) in lang.into_iter() {
+			let src = Symbol::from(lang_item).as_non_terminal();
 			let mut rules = vec![];
 			for (lang_patts, lang_cb) in lang_rules.into_iter() {
 				let ss = lang_patts;
 				let rule = if let Some(cb) = lang_cb {
-					Rule::from_with_handler(&ss, &terms_set, cb)
+					Rule::from_with_handler(src, &ss, &terms_set, cb)
 				} else {
-					Rule::from(&ss, &terms_set)
+					Rule::from(src, &ss, &terms_set)
 				};
 				rules.push(rule);
 			}
-			let param = Param::from(lang_item, rules);
-			params.push(param);
+			grammar.insert(RuleSet { rules, src });
 		}
 
-		let mut parent_of = HashMap::new();
-		let mut index_of = HashMap::new();
+		let mut first: HashMap<Symbol, HashSet<Symbol>> = HashMap::new();
+		let mut follow: HashMap<Symbol, HashSet<Symbol>> = HashMap::new();
 
-		let mut first: HashMap<i64, HashSet<i64>> = HashMap::new();
-		let mut follow: HashMap<i64, HashSet<i64>> = HashMap::new();
-
-		// insert terms
-		for term in terms.iter() {
-			first.index_mut_or_insert(*term).insert(*term);
-			follow.index_mut_or_insert(*term);
+		// insert symbols
+		for symbol in symbols.iter() {
+			first.index_mut_or_insert(*symbol).insert(*symbol);
+			follow.index_mut_or_insert(*symbol);
 		}
 
-		terms.push(BOTTOM);
+		symbols.push(BOTTOM);
 
-		// insert params
-		for param in params.iter() {
-			for rule in param.rules.iter() {
-				for patt in rule.patts.iter() {
-					first.index_mut_or_insert(*patt);
-					if *patt < 0 {
-						follow.index_mut_or_insert(*patt).insert(BOTTOM);
+		// insert non-symbols
+		for (src, rule_set) in grammar.iter() {
+			for rule in rule_set.iter() {
+				for symbol in rule.symbols.iter() {
+					first.index_mut_or_insert(*symbol);
+					if symbol.is_non_terminal() {
+						follow.index_mut_or_insert(*symbol).insert(BOTTOM);
 					}
 				}
 			}
-			first.index_mut_or_insert(param.item);
-			follow.index_mut_or_insert(param.item).insert(BOTTOM);
-			terms.push(param.item);
+			first.index_mut_or_insert(*src);
+			follow.index_mut_or_insert(*src).insert(BOTTOM);
+			symbols.push(*src);
 		}
-		// insert eps
-		first.index_mut_or_insert(EPS).insert(EPS);
-		first.index_mut_or_insert(!EPS).insert(EPS);
+		follow
+			.index_mut_or_insert(grammar.origin().src)
+			.insert(BOTTOM);
 
 		// make first
-		make_first(&mut first, &params);
+		make_first(&mut first, &grammar);
 		// make follow
-		make_follow(&first, &mut follow, &params);
+		make_follow(&first, &mut follow, &grammar);
 
-		// index using params::rule!
-		let mut index: usize = 0;
-		let mut param_of = HashMap::<i64, &'a Param<T::Output>>::new();
-		for param in params.iter() {
-			for rule in param.rules.iter() {
-				unsafe {
-					let rule_ptr: *const Rule<T::Output> = rule;
-					parent_of.insert(&*rule_ptr, param.item);
-					index_of.insert(&*rule_ptr, index);
-					index += 1;
-				}
-			}
-			unsafe {
-				let param_ptr: *const Param<T::Output> = param;
-				param_of.insert(param.item, &*param_ptr);
+		// println!("FIRST = {:?}", first);
+		// println!("FOLLOW = {:?}", follow);
+
+		let mut closures: Vec<Closure<'a, T::Output>> = vec![];
+		let mut goto: Vec<_> = vec![];
+		// make closures
+		make_closures(&mut closures, &mut goto, unsafe {
+			&*(&grammar as *const Grammar<T::Output>)
+		});
+
+		let mut action: Vec<HashMap<Symbol, _>> = vec![];
+		for _ in 0..goto.len() {
+			action.push(HashMap::new());
+		}
+
+		for (state, line) in goto.iter().enumerate() {
+			for (symbol, next_state) in line.iter() {
+				action[state].insert(*symbol, Action::Shift(*next_state));
 			}
 		}
 
+		for (state, closure) in closures.iter().enumerate() {
+			for item in closure.expanded().iter() {
+				if item.is_complete() {
+					for symbol in follow.get(&item.rule.src).unwrap().iter() {
+						if action[state].contains_key(&symbol) {
+							let prev = match action[state].get(&symbol).unwrap() {
+								Action::Shift(new_state) => {
+									format!("Shifting to state {}", new_state)
+								}
+								Action::Reduce(rule) => format!("Reducing {:?}", rule),
+								Action::Accept => format!("Accept"),
+							};
+							panic!(format!(
+								"Conflict action found in this grammar:\n#0: {}\n#1: Reducing {:?}\nCan't build parse table",
+								prev,
+								item.rule
+							));
+						} else {
+							action[state].insert(
+								*symbol,
+								if item.rule == grammar.origin() {
+									Action::Accept
+								} else {
+									Action::Reduce(item.rule)
+								},
+							);
+						}
+					}
+				}
+			}
+		}
+
+		// println!("Closures = {}", closures.as_string());
+
 		let set = RegexSet::new(lex_rules.iter().map(|x| x.1)).unwrap();
-		let le: Vec<(i64, Regex)> = lex_rules
+		let le: Vec<(Symbol, Regex)> = lex_rules
 			.iter()
 			.map(|x| (*x.0, Regex::new(x.1).unwrap()))
 			.collect();
 
-		let mut parser = LRParser {
+		let parser = LRParser {
 			lex_rules: le,
 			lex_rules_set: set,
-			params: params,
-			terms: terms,
-			first: first,
-			follow: follow,
-			parent_of: parent_of,
-			index_of: index_of,
-			param_of: param_of,
-			closures: vec![],
-			action: vec![],
-			goto: vec![],
+			grammar,
+			symbols,
+			action,
 			phantom: PhantomData,
 		};
 
-		parser.init();
-
-		// println!("CLOSURE = {:?}", parser.closures);
-		// println!("ACTION = {:?}", parser.action);
-		// println!("GOTO = {:?}", parser.goto);
+		// println!("{}", parser.format_actions());
 
 		parser
-	}
-
-	pub fn get_closure(&self) -> String {
-		self.closures.as_string()
-	}
-
-	pub fn get_parse_table(&self) -> String {
-		let mut res = format!("{:4}", "");
-		for term in self.terms.iter() {
-			res += &format!("{:6}", decode(*term));
-		}
-		for (s, _) in self.closures.iter().enumerate() {
-			res += &format!("\n{:<4}", s);
-			let action = &self.action[s];
-			let goto = &self.goto[s];
-			for term in self.terms.iter() {
-				if let Some(Action { flag, .. }) = action.get(term) {
-					let action = match flag {
-						ActionType::MoveIn => "s",
-						ActionType::Reduce => "r",
-						ActionType::Hold => "h",
-						ActionType::Accept => "acc",
-					};
-					if let Some(dst) = goto.get(term) {
-						res += &format!("{:6}", format!("{}{}", action, dst));
-					} else {
-						res += &format!("{:6}", format!("{}{}", action, ""));
-					}
-				} else {
-					res += &format!("{:6}", "");
-				}
-			}
-		}
-		format!("{}", res)
 	}
 
 	fn next<'b>(&self, chunk: &mut TextChunk<'b>) -> Option<Token<'b>> {
@@ -646,7 +431,7 @@ where
 				chunk.pos.1 += (s - beg) as u32;
 				// .find('\n');
 				let tok = Token {
-					id: *val,
+					symbol: *val,
 					val: &chunk.text[s..t],
 					pos: chunk.pos,
 				};
@@ -665,10 +450,9 @@ where
 		None
 	}
 
-	fn do_merge(&self, rule: &'a Rule<T::Output>, env: &mut ParseEnv<'a, T::Output>) {
+	fn do_reduce(&self, rule: &'a Rule<T::Output>, env: &mut ParseEnv<'a, T::Output>) {
 		let ParseEnv {
 			ast_stack,
-			new_asts,
 			term_stack,
 			states,
 			..
@@ -683,33 +467,41 @@ where
 		let sub_term: Vec<_> = term_stack.split_off(len - term_size).into_iter().collect();
 		let len = states.len();
 		states.split_off(len - ast_size - term_size);
-		let id = *self.parent_of.get(&rule).unwrap();
 
 		let mut childs = vec![];
 		let mut it_ast = sub_ast.into_iter();
 		let mut it_term = sub_term.into_iter();
 
-		for dummy in rule.patts.iter() {
-			if *dummy <= 0i64 {
+		for dummy in rule.iter() {
+			if dummy.is_non_terminal() {
 				childs.push(AstNode::Ast(it_ast.next().unwrap()));
 			} else {
 				childs.push(AstNode::Token(it_term.next().unwrap()));
 			}
 		}
 
-		let ast = Ast { id, childs, rule };
+		let ast = Ast {
+			symbol: rule.src,
+			childs,
+			rule,
+		};
 		// println!(
 		//     "yields => {:?}",
 		//     ast // decode(id)
 		// );
-		new_asts.push_back((ast, *self.parent_of.get(&rule).unwrap()));
+		ast_stack.push_back(ast);
+		let curr_state = *states.back().unwrap();
+		if let Action::Shift(next_state) = self.action[curr_state].get(&rule.src).unwrap() {
+			states.push_back(*next_state);
+		} else {
+			panic!();
+		}
 	}
 
-	fn do_match(&self, term: i64, env: &mut ParseEnv<'a, T::Output>) -> Result<bool, String> {
+	fn do_match(&self, symbol: Symbol, env: &mut ParseEnv<'a, T::Output>) -> Result<bool, String> {
 		let ParseEnv {
 			states,
 			ast_stack,
-			new_asts,
 			tokens,
 			term_stack,
 			..
@@ -719,44 +511,28 @@ where
 		// println!("ast_stack = {:?}", ast_stack);
 		// // let term_vec: Vec<_> = term_stack.iter().map(|x|decode(*x)).collect();
 		// println!("term_stack = {:?}", term_stack);
-		// println!(
-		//     "new_asts = {:?}",
-		//     new_asts.iter().map(|x| &x.0).collect::<Vec<&Ast<T::Output>>>()
-		// );
 		// println!("states = {:?}", states);
 		// // println!("action = {:?}", self.action[state]);
 		// println!(
 		//     "ACTION[{:?}][{:?}] = {:?}",
 		//     state,
-		//     decode(term),
-		//     self.action[state].get(&term)
+		//     symbol,
+		//     self.action[state].get(&symbol)
 		// );
-		match self.action[state].get(&term) {
+		match self.action[state].get(&symbol) {
 			Some(action) => {
-				match action.flag {
-					ActionType::MoveIn => {
-						states.push_back(*self.goto[state].get(&term).unwrap());
-						if term >= 0 {
-							term_stack.push_back(tokens.pop_front().unwrap());
-						} else {
-							ast_stack.push_back(new_asts.pop_back().unwrap().0);
-						}
+				match action {
+					Action::Shift(new_state) => {
+						states.push_back(*new_state);
+						term_stack.push_back(tokens.pop_front().unwrap());
 					}
-					ActionType::Hold => {
-						states.push_back(0);
-						ast_stack.push_back(Ast::from(0));
-						self.do_merge(action.rule.unwrap(), env);
-					}
-					ActionType::Accept => {
-						if ast_stack.len() == 1
-							&& tokens.is_empty() && new_asts.is_empty()
-							&& term_stack.is_empty()
-						{
+					Action::Accept => {
+						if ast_stack.len() == 1 && tokens.is_empty() && term_stack.is_empty() {
 							return Ok(true);
 						}
 					}
-					ActionType::Reduce => {
-						self.do_merge(action.rule.unwrap(), env);
+					Action::Reduce(rule) => {
+						self.do_reduce(rule, env);
 					}
 				};
 				Ok(false)
@@ -778,17 +554,12 @@ where
 		env.states.push_back(0);
 
 		loop {
-			let term = match env.new_asts.back() {
-				Some(ast) => ast.1,
-				_ => {
-					if env.tokens.is_empty() {
-						BOTTOM
-					} else {
-						env.tokens.front().unwrap().id
-					}
-				}
+			let symbol = if env.tokens.is_empty() {
+				BOTTOM
+			} else {
+				env.tokens.front().unwrap().symbol
 			};
-			match self.do_match(term, &mut env) {
+			match self.do_match(symbol, &mut env) {
 				Ok(true) => break,
 				Err(err) => return Err(err),
 				_ => {}

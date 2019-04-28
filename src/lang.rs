@@ -33,6 +33,16 @@ macro_rules! lang {
 				)
 			));
 		})*
+
+		let s = lng[0].0;
+		lng.insert(0, (
+			"@",
+			vec![(
+				vec![s],
+				None
+			)]
+		));
+
 		lng
 	} };
 	(@expand_param
