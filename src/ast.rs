@@ -5,6 +5,7 @@ use super::rule::Rule;
 use super::symbol::Symbol;
 use super::util::{AsString, ToDoc};
 
+#[derive(Clone)]
 pub struct Token<'a> {
 	pub(crate) symbol: Symbol,
 	pub val: &'a str,

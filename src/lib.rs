@@ -239,17 +239,6 @@ pub struct LRParser<'a, T: LRLang> {
 	phantom: PhantomData<T>,
 }
 
-struct TextChunk<'a> {
-	pos: (u32, u32),
-	text: &'a str,
-}
-
-impl<'a> TextChunk<'a> {
-	fn from(text: &'a str) -> Self {
-		TextChunk { pos: (0, 0), text }
-	}
-}
-
 impl<'a, T> LRParser<'a, T>
 where
 	T: LRLang,
@@ -464,6 +453,7 @@ where
 				while let Some(pos) = chunk.text[beg..s].find(|c: char| c == '\n') {
 					chunk.pos = (chunk.pos.0 + 1, 0);
 					beg += pos + 1;
+					chunk.line = &chunk.text[beg..];
 				}
 				chunk.pos.1 += (s - beg) as u32;
 				// .find('\n');
@@ -477,6 +467,7 @@ where
 				while let Some(pos) = chunk.text[s..t].find(|c: char| c == '\n') {
 					chunk.pos = (chunk.pos.0 + 1, 0);
 					beg += pos + 1;
+					chunk.line = &chunk.text[beg..];
 				}
 				chunk.pos.1 += (t - beg) as u32;
 				chunk.text = &chunk.text[t..];
@@ -535,12 +526,16 @@ where
 		}
 	}
 
-	fn do_match(&self, symbol: Symbol, env: &mut ParseEnv<'a, T::Output>) -> Result<bool, String> {
+	fn do_match(
+		&self,
+		symbol: Symbol,
+		env: &mut ParseEnv<'a, T::Output>,
+	) -> Result<bool, ParsingError<'a>> {
 		let ParseEnv {
 			states,
 			ast_stack,
-			tokens,
 			term_stack,
+			chunk,
 			..
 		} = env;
 		let state = *states.back().unwrap();
@@ -561,10 +556,12 @@ where
 				match action {
 					Action::Shift(new_state) => {
 						states.push_back(*new_state);
-						term_stack.push_back(tokens.pop_front().unwrap());
+						let token = std::mem::replace(&mut env.token, None);
+						term_stack.push_back(token.unwrap());
+						env.token = self.next(chunk);
 					}
 					Action::Accept => {
-						if ast_stack.len() == 1 && tokens.is_empty() && term_stack.is_empty() {
+						if ast_stack.len() == 1 && env.token.is_none() && term_stack.is_empty() {
 							return Ok(true);
 						}
 					}
@@ -574,27 +571,19 @@ where
 				};
 				Ok(false)
 			}
-			None => {
-				let Token { val, pos, .. } = tokens.front().unwrap();
-				Err(format!("Unexpected Token: {:?} at {:?}", val, pos))
-			}
+			None => Err(env.report_error()),
 		}
 	}
 
-	pub fn parse<'b>(&self, text: &'b str) -> Result<Option<T::Output>, String> {
-		let mut chunk = TextChunk::from(text);
-		// let token = self.next(&mut chunk);
-		let mut env = ParseEnv::new();
-		while let Some(token) = self.next(&mut chunk) {
-			env.tokens.push_back(token);
-		}
-		env.states.push_back(0);
+	pub fn parse(&self, text: &'a str) -> Result<Option<T::Output>, ParsingError<'a>> {
+		let mut env = ParseEnv::from(text);
+		env.token = self.next(&mut env.chunk);
 
 		loop {
-			let symbol = if env.tokens.is_empty() {
+			let symbol = if env.token.is_none() {
 				BOTTOM
 			} else {
-				env.tokens.front().unwrap().symbol
+				env.token.as_ref().unwrap().symbol
 			};
 			match self.do_match(symbol, &mut env) {
 				Ok(true) => break,

@@ -194,21 +194,86 @@ impl<'a, T> ToDoc for Vec<Closure<'a, T>> {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Clone)]
+pub struct TextChunk<'a> {
+	pub pos: (u32, u32),
+	pub text: &'a str,
+	pub line: &'a str,
+}
+
+impl<'a> TextChunk<'a> {
+	pub fn from(text: &'a str) -> Self {
+		TextChunk {
+			pos: (0, 0),
+			text,
+			line: text,
+		}
+	}
+}
+
+pub struct ParsingError<'a> {
+	chunk: TextChunk<'a>,
+	token: Option<Token<'a>>,
+}
+
+impl<'a> std::fmt::Debug for ParsingError<'a> {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		write!(f, "{}", self.as_string())
+	}
+}
+
+impl<'a> ParsingError<'a> {
+	fn as_string(&self) -> String {
+		let mut res = String::new();
+		if let Some(pos) = self.chunk.line.find(|c: char| c == '\n') {
+			res += &self.chunk.line[..pos];
+		} else {
+			res += self.chunk.line;
+		}
+		res += "\n";
+		if let Some(Token { val, pos, .. }) = self.token {
+			for _i in 0..pos.1 {
+				res += " ";
+			}
+			res += "^";
+			for _i in 1..self.token.as_ref().unwrap().val.len() {
+				res += "~";
+			}
+			res += "\n";
+			res += &format!("{}:{}: Unexpected Token: {:?}", pos.0, pos.1, val)
+		} else {
+			for _i in 0..self.chunk.line.len() {
+				res += " ";
+			}
+			res += "^\n";
+			res += &format!("{}:{}: Unexpected EOF", self.chunk.pos.0, self.chunk.pos.1)
+		}
+		res
+	}
+}
+
 pub struct ParseEnv<'a, T> {
-	pub tokens: VecDeque<Token<'a>>,
+	pub chunk: TextChunk<'a>,
+	pub token: Option<Token<'a>>,
 	pub states: VecDeque<usize>,
 	pub term_stack: VecDeque<Token<'a>>,
 	pub ast_stack: VecDeque<Ast<'a, T>>,
 }
 
 impl<'a, T> ParseEnv<'a, T> {
-	pub fn new() -> Self {
+	pub fn from(text: &'a str) -> Self {
 		ParseEnv {
-			tokens: VecDeque::new(),
-			states: VecDeque::new(),
+			chunk: TextChunk::from(text),
+			token: None,
+			states: VecDeque::from(vec![0]),
 			term_stack: VecDeque::new(),
 			ast_stack: VecDeque::new(),
+		}
+	}
+	pub fn report_error(&self) -> ParsingError<'a> {
+		ParsingError {
+			chunk: self.chunk.clone(),
+			token: self.token.clone(),
 		}
 	}
 }
