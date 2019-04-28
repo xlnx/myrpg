@@ -58,15 +58,15 @@ lang! {
 
 }
 
-#[test]
-fn test_mathexpr() {
-	let parser = LRParser::<MathExpr>::new();
-	// println!("{}", parser.get_closure());
-	// println!("{}", parser.get_parse_table());
-	// println!("{:?}", parser.parse("aaaabbb"));
-	let res = parser.parse("4 * (2 + 1)");
-	println!("{:?}", res);
-}
+// #[test]
+// fn test_mathexpr() {
+// 	let parser = LRParser::<MathExpr>::new();
+// 	// println!("{}", parser.get_closure());
+// 	// println!("{}", parser.get_parse_table());
+// 	// println!("{:?}", parser.parse("aaaabbb"));
+// 	let res = parser.parse("4 * (2 + 1)");
+// 	println!("{:?}", res);
+// }
 
 // lang! {
 
@@ -136,3 +136,34 @@ fn test_mathexpr() {
 // 	let res = parser.parse("int 0, 1, 2");
 // 	println!("{:?}", res);
 // }
+
+lang! {
+
+	Name = IfExpr
+	ValueType = i32
+
+	;;
+
+	If => r"if",
+	Else => r"else",
+	Id => r"[a-zA-Z_]+"
+
+	;;
+
+	S => [
+		Stmt
+	],
+	Stmt => [
+		If Id Stmt Else Stmt,
+		If Id Stmt,
+		Id
+	]
+
+}
+
+#[test]
+fn test_ifexpr() {
+	let parser = LRParser::<IfExpr>::new();
+	let res = parser.parse("if a b else c");
+	println!("{:?}", res);
+}

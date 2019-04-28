@@ -6,6 +6,7 @@ use super::ast::{Ast, AstNode};
 use super::symbol::Symbol;
 
 pub struct Rule<T> {
+	pub id: usize,
 	pub src: Symbol,
 	pub ast_cnt: u16,
 	pub term_cnt: u16,
@@ -17,9 +18,15 @@ impl<T> Rule<T> {
 	pub fn iter(&self) -> std::slice::Iter<Symbol> {
 		self.symbols.iter()
 	}
-	pub fn from(src: Symbol, symbol_literals: &Vec<&str>, terminals: &HashSet<Symbol>) -> Self {
+	pub fn from(
+		id: usize,
+		src: Symbol,
+		symbol_literals: &Vec<&str>,
+		terminals: &HashSet<Symbol>,
+	) -> Self {
 		assert_eq!(src.is_non_terminal(), true);
 		let mut rule = Rule {
+			id,
 			src,
 			ast_cnt: 0,
 			term_cnt: 0,
@@ -52,12 +59,13 @@ impl<T> Rule<T> {
 		rule
 	}
 	pub fn from_with_handler(
+		id: usize,
 		src: Symbol,
 		symbol_literals: &Vec<&str>,
 		terminals: &HashSet<Symbol>,
 		handler: Box<Fn(&Ast<T>) -> Option<T>>,
 	) -> Self {
-		let mut rule = Self::from(src, symbol_literals, terminals);
+		let mut rule = Self::from(id, src, symbol_literals, terminals);
 		rule.handler = handler;
 		rule
 	}

@@ -280,16 +280,24 @@ where
 		let (lex, lang) = T::new();
 
 		// make symbols
-		let mut lex_rules: HashMap<_, String> = HashMap::new();
+		let mut lex_rules = vec![];
+
 		let mut symbols = vec![];
 		for (lex_name, lex_patt) in lex.iter() {
 			let symbol = Symbol::from(lex_name).as_terminal();
 			symbols.push(symbol);
-			lex_rules.insert(symbol, format!(r"^\s*({})", lex_patt));
+			let patt = format!(r"^\s*({})", lex_patt);
+			lex_rules.push((symbol, patt));
 		}
+		let lex_rules_set = RegexSet::new(lex_rules.iter().map(|x| &x.1)).unwrap();
+		let lex_rules: Vec<_> = lex_rules
+			.into_iter()
+			.map(|x| (x.0, Regex::new(&x.1).unwrap()))
+			.collect();
 		let terms_set: HashSet<Symbol> = symbols.iter().map(|x| *x).collect();
 
 		// make params
+		let mut rule_id: usize = 0;
 		let mut grammar = Grammar::new();
 		for (lang_item, lang_rules) in lang.into_iter() {
 			let src = Symbol::from(lang_item).as_non_terminal();
@@ -297,10 +305,11 @@ where
 			for (lang_patts, lang_cb) in lang_rules.into_iter() {
 				let ss = lang_patts;
 				let rule = if let Some(cb) = lang_cb {
-					Rule::from_with_handler(src, &ss, &terms_set, cb)
+					Rule::from_with_handler(rule_id, src, &ss, &terms_set, cb)
 				} else {
-					Rule::from(src, &ss, &terms_set)
+					Rule::from(rule_id, src, &ss, &terms_set)
 				};
+				rule_id += 1;
 				rules.push(rule);
 			}
 			grammar.insert(RuleSet { rules, src });
@@ -366,18 +375,53 @@ where
 				if item.is_complete() {
 					for symbol in follow.get(&item.rule.src).unwrap().iter() {
 						if action[state].contains_key(&symbol) {
-							let prev = match action[state].get(&symbol).unwrap() {
+							let mut resolve = None;
+							let curr_action = action[state].get(&symbol).unwrap();
+							match curr_action {
 								Action::Shift(new_state) => {
-									format!("Shifting to state {}", new_state)
+									if closures[*new_state]
+										.iter()
+										.all(|new_item| new_item.rule.src == item.rule.src)
+									{
+										resolve = Some(
+											closures[*new_state]
+												.iter()
+												.all(|new_item| new_item.rule.id > item.rule.id),
+										)
+									}
 								}
-								Action::Reduce(rule) => format!("Reducing {:?}", rule),
-								Action::Accept => format!("Accept"),
-							};
-							panic!(format!(
-								"Conflict action found in this grammar:\n#0: {}\n#1: Reducing {:?}\nCan't build parse table",
-								prev,
-								item.rule
-							));
+								Action::Reduce(rule) => {
+									if rule.src == item.rule.src {
+										resolve = Some(rule.id > item.rule.id)
+									}
+								}
+								_ => {}
+							}
+							if let Some(resolve) = resolve {
+								if resolve {
+									action[state].insert(
+										*symbol,
+										if item.rule == grammar.origin() {
+											Action::Accept
+										} else {
+											Action::Reduce(item.rule)
+										},
+									);
+								}
+							} else {
+								let prev = match curr_action {
+									Action::Shift(new_state) => {
+										format!("Shifting to state {:?}", closures[*new_state])
+									}
+									Action::Reduce(rule) => format!("Reducing {:?}", rule),
+									Action::Accept => format!("Accept"),
+								};
+								panic!(format!(
+									"Conflict action found in this grammar:\n#0: {}\n#1: Reducing {:?}\nCan't build parse table",
+									prev,
+									item.rule
+								));
+							}
 						} else {
 							action[state].insert(
 								*symbol,
@@ -393,23 +437,16 @@ where
 			}
 		}
 
-		// println!("Closures = {}", closures.as_string());
-
-		let set = RegexSet::new(lex_rules.iter().map(|x| x.1)).unwrap();
-		let le: Vec<(Symbol, Regex)> = lex_rules
-			.iter()
-			.map(|x| (*x.0, Regex::new(x.1).unwrap()))
-			.collect();
-
 		let parser = LRParser {
-			lex_rules: le,
-			lex_rules_set: set,
+			lex_rules,
+			lex_rules_set,
 			grammar,
 			symbols,
 			action,
 			phantom: PhantomData,
 		};
 
+		// println!("Closures = {}", closures.as_string());
 		// println!("{}", parser.format_actions());
 
 		parser
