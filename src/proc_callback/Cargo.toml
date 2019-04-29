@@ -8,6 +8,7 @@ edition = "2018"
 proc-macro2 = "^0.4.6"
 quote = "^0.6.3"
 syn = "^0.15.1"
+regex = "1.1.6"
 
 [lib]
 name = "proc_callback"

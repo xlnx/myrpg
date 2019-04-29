@@ -16,13 +16,7 @@ lang! {
 	;;
 
 	Number => r"[0-9]+",
-	Id => r"[a-zA-Z_]+",
-	Add => r"\+",
-	Sub => r"-",
-	Mul => r"\*",
-	Div => r"/",
-	LBracket => r"\(",
-	RBracket => r"\)",
+	Id => r"[a-zA-Z_]+"
 
 	;;
 
@@ -34,10 +28,10 @@ lang! {
 		}
 	],
 	Expr => [
-		Expr Add Term => |lhs, _, rhs| -> _ {
+		Expr "+" Term => |lhs, _, rhs| -> _ {
 			Some(lhs.gen().unwrap() + rhs.gen().unwrap())
 		},
-		Expr Sub Term => |lhs, _, rhs| -> _ {
+		Expr "-" Term => |lhs, _, rhs| -> _ {
 			Some(lhs.gen().unwrap() - rhs.gen().unwrap())
 		},
 		Term => |child| -> _ {
@@ -45,10 +39,10 @@ lang! {
 		}
 	],
 	Term => [
-		Term Mul Factor => |lhs, _, rhs| -> _ {
+		Term "*" Factor => |lhs, _, rhs| -> _ {
 			Some(lhs.gen().unwrap() * rhs.gen().unwrap())
 		},
-		Term Div Factor => |lhs, _, rhs| -> _ {
+		Term "/" Factor => |lhs, _, rhs| -> _ {
 			Some(lhs.gen().unwrap() / rhs.gen().unwrap())
 		},
 		Factor => |child| -> _ {
@@ -59,7 +53,7 @@ lang! {
 		Number => |tok| -> Option<i32> {
 			Some(tok.val.parse().unwrap())
 		},
-		LBracket Expr RBracket => |_, child, _| -> _ {
+		"(" Expr ")" => |_, child, _| -> _ {
 			child.gen()
 		}
 	]
@@ -67,14 +61,50 @@ lang! {
 }
 
 #[test]
-fn test_math_expr() {
+fn test_mathexpr() {
 	let parser = LRParser::<MathExpr>::new();
-
-	let res = parser.parse("3 * (1 + 2)");
-
-	assert_eq!(res, Ok(Some(9)));
+	let res = parser.parse("4 * (2 + 1)");
+	println!("{:?}", res);
 }
 
+```
+
+
+
+```rust
+use myrpg::{ast::*, LRParser, *};
+
+lang! {
+
+    Name = IfExpr
+    ValueType = i32
+
+    ;;
+
+    Id => r"[a-zA-Z_]+"
+
+    ;;
+
+    S => [
+        Stmt
+    ],
+    Stmt => [
+        "if" Id Stmt "else" Stmt,
+        "if" Id Stmt,
+        Id
+    ]
+
+}
+
+#[test]
+fn test_ifexpr() {
+    let parser = LRParser::<IfExpr>::new();
+
+    match parser.parse("if a b else c") {
+        Ok(val) => println!("{:?}", val),
+        Err(err) => println!("{:?}", err),
+    }
+}
 ```
 
 # Status

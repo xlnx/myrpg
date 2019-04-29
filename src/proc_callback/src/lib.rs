@@ -2,41 +2,128 @@ extern crate proc_macro;
 
 use std::collections::HashSet;
 
+
 use proc_macro::TokenStream;
 use quote::quote;
-// use std::collections::VecDeque;
+use regex;
 // use syn::DeriveInput;
-use proc_macro2::{Ident, TokenTree};
+use proc_macro2::TokenTree;
 
-fn to_ident(token: TokenTree) -> Ident {
+fn unwrap_single(token: TokenTree) -> TokenTree {
     match token {
-        TokenTree::Group(g) => to_ident(g.stream().into_iter().next().unwrap()),
-        TokenTree::Ident(i) => i,
-        _ => panic!(),
+        TokenTree::Group(g) => g.stream().into_iter().next().unwrap(),
+        val @ _ => val,
+    }
+}
+
+fn unwrap_literal(token: &str) -> Option<String> {
+    if token.len() < 2 || token.chars().next().unwrap() != token.chars().rev().next().unwrap() {
+        return None;
+    }
+    match token.chars().next().unwrap() {
+        '\'' | '\"' => {
+            let val = &token[1..token.len() - 1];
+            Some(String::from(val))
+        }
+        _ => None,
     }
 }
 
 #[proc_macro]
-pub fn dest_callback(input: TokenStream) -> TokenStream {
+pub fn classify_symbols(input: TokenStream) -> TokenStream {
 
     let mut input = proc_macro2::TokenStream::from(input).into_iter();
-    let res = to_ident(input.next().unwrap());
-    let terms = input.next().unwrap();
+
+    let mut symbols = vec![];
+    let mut terminals = vec![];
+    let mut begin_terminal = false;
+
+    while let Some(token) = input.next() {
+        let tok_literal = unwrap_single(token).to_string();
+        if tok_literal == "@" {
+            terminals = terminals.into_iter().rev().collect();
+            begin_terminal = true;
+        } else {
+            if !begin_terminal {
+                terminals.push((tok_literal, input.next().unwrap()));
+            } else {
+                match unwrap_literal(tok_literal.as_str()) {
+                    Some(orig) => {
+                        let reg = regex::escape(orig.as_str());
+                        let terminal = (
+                            String::from("\"") + orig.as_str() + "\"",
+                            (quote! { #reg }).into_iter().next().unwrap(),
+                        );
+                        if terminals.iter().all(|x| x.0 != tok_literal) {
+                            terminals.push(terminal);
+                        }
+                    }
+                    _ => {
+                        symbols.push(tok_literal);
+                    }
+                }
+            }
+        }
+    }
+
+    terminals = terminals.into_iter().rev().collect();
+
+    let mut non_terminals_quote = quote! {
+        let mut non_terminals = ::std::collections::HashSet::new();
+    };
+    for symbol in symbols.iter() {
+        non_terminals_quote = quote! {
+            #non_terminals_quote
+            non_terminals.insert(#symbol);
+        };
+    }
+
+    let mut terminals_quote = quote! {
+        let mut terminals = vec![];
+    };
+    for (terminal, regex) in terminals.iter() {
+        terminals_quote = quote! {
+            #terminals_quote
+            terminals.push((#terminal, #regex));
+        };
+    }
+
+    // println!("{:?}", symbols);
+    // println!("{:?}", terminals);
+
+    let output = quote! {
+        fn apply() -> (Vec<(&'static str, &'static str)>, ::std::collections::HashSet<&'static str>) {
+            ({ #terminals_quote terminals },
+            { #non_terminals_quote non_terminals })
+        }
+    };
+
+    output.into()
+
+}
+
+#[proc_macro]
+pub fn wrap_callback(input: TokenStream) -> TokenStream {
+
+    let mut input = proc_macro2::TokenStream::from(input).into_iter();
+
+    let res = input.next().unwrap();
+    let terminals = input.next().unwrap();
     let symbols = input.next().unwrap();
     let attr = input.next().unwrap();
     let callback = input.next().unwrap();
 
     if let TokenTree::Group(attr) = attr {
-
-        // println!("{:?}", attr);
-
-        if let (TokenTree::Group(terms), TokenTree::Group(symbols), TokenTree::Group(callback)) =
-            (terms, symbols, callback)
+        if let (
+            TokenTree::Group(terminals),
+            TokenTree::Group(symbols),
+            TokenTree::Group(callback),
+        ) = (terminals, symbols, callback)
         {
 
             if let Some(attr) = attr.stream().into_iter().next() {
 
-                match to_ident(attr).to_string().as_str() {
+                match unwrap_single(attr).to_string().as_str() {
 
                     "raw" => {
                         let output = quote! {
@@ -57,21 +144,21 @@ pub fn dest_callback(input: TokenStream) -> TokenStream {
                 let tok = quote! { &Token };
                 let mut type_param = quote! {};
                 let mut dest = quote! {};
-                let terms: HashSet<_> = terms
+                let terminals: HashSet<_> = terminals
                     .stream()
                     .into_iter()
-                    .map(to_ident)
+                    .map(unwrap_single)
                     .map(|x| x.to_string())
                     .collect();
                 let symbols: Vec<_> = symbols
                     .stream()
                     .into_iter()
-                    .map(to_ident)
+                    .map(unwrap_single)
                     .map(|x| x.to_string())
                     .collect();
                 let mut idx = 0usize;
                 for symbol in symbols.iter() {
-                    if terms.contains(symbol) {
+                    if terminals.contains(symbol) || unwrap_literal(symbol.as_str()).is_some() {
                         // is terminal
                         type_param = quote! { #type_param #tok, };
                         dest = quote! { #dest ast.childs[#idx].as_token(), };

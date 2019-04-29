@@ -13,7 +13,7 @@ macro_rules! lang {
 		@
 		$(
 			$a: ident => [
-				$( $($b: ident)* $(=> $(@ $attr: ident)? $cb: expr)?),*
+				$( $($b: pat)* $(=> $(@ $attr: ident)? $cb: expr)?),*
 			]
 		),*
 	) => {{
@@ -50,7 +50,7 @@ macro_rules! lang {
 		;;
 		$tuple: tt
 		@
-		$( $($b: ident)* $(=> $(@ $attr: ident)? $cb: expr)?),*
+		$( $($b: pat)* $(=> $(@ $attr: ident)? $cb: expr)?),*
 	) => { {
 		let mut rules: Vec<(
 				Vec<&'a str>,
@@ -95,7 +95,7 @@ macro_rules! lang {
 		Some({
 			struct __Dummy;
 			impl __Dummy {
-				dest_callback!($res $terms $patts $attr $cb);
+				wrap_callback!($res $terms $patts $attr $cb);
 			}
 			__Dummy::apply()
 		})
@@ -112,7 +112,7 @@ macro_rules! lang {
 		;;
 		$(
 			$a: ident => [
-				$( $($b: ident)* $(=> $(@ $attr: ident)? $cb: expr)?),* $(,)?
+				$( $($b: pat)* $(=> $(@ $attr: ident)? $cb: expr)?),* $(,)?
 			]
 		),* $(,)?
 	) => {
@@ -130,13 +130,15 @@ macro_rules! lang {
 					)>
 				)>
 			) {
-
 				type FnType = Fn(&Ast<$res>) -> Option<$res>;
 
-				let mut lex: Vec<(&'a str, &'a str)> = vec![];
-				$(
-					lex.push((stringify!($l), $reg));
-				)*
+				let (lex, non_terminals) = {
+					struct __Dummy;
+					impl __Dummy {
+						classify_symbols!($($l $reg)* @ $($a)* $($($($b)*)*)*);
+					}
+					__Dummy::apply()
+				};
 
 				let lng = lang!(@expand_grammar $res ;; ($($l)*) @
 					$(

@@ -1,141 +1,63 @@
 use myrpg::{ast::*, LRParser, *};
 
-// lang! {
+lang! {
 
-// 	Name = MathExpr
-// 	ValueType = i32
+	Name = MathExpr
+	ValueType = i32
 
-// 	;;
+	;;
 
-// 	Number => r"[0-9]+",
-// 	Id => r"[a-zA-Z_]+",
-// 	Add => r"\+",
-// 	Sub => r"-",
-// 	Mul => r"\*",
-// 	Div => r"/",
-// 	LBracket => r"\(",
-// 	RBracket => r"\)",
+	Number => r"[0-9]+",
+	Id => r"[a-zA-Z_]+"
 
-// 	;;
+	;;
 
-// 	S => [
-// 		Expr => |child| -> _ {
-// 			let res = child.gen().unwrap();
-// 			println!("{:?}", child);
-// 			Some(res)
-// 		}
-// 	],
-// 	Expr => [
-// 		Expr Add Term => |lhs, _, rhs| -> _ {
-// 			Some(lhs.gen().unwrap() + rhs.gen().unwrap())
-// 		},
-// 		Expr Sub Term => |lhs, _, rhs| -> _ {
-// 			Some(lhs.gen().unwrap() - rhs.gen().unwrap())
-// 		},
-// 		Term => |child| -> _ {
-// 			child.gen()
-// 		}
-// 	],
-// 	Term => [
-// 		Term Mul Factor => |lhs, _, rhs| -> _ {
-// 			Some(lhs.gen().unwrap() * rhs.gen().unwrap())
-// 		},
-// 		Term Div Factor => |lhs, _, rhs| -> _ {
-// 			Some(lhs.gen().unwrap() / rhs.gen().unwrap())
-// 		},
-// 		Factor => |child| -> _ {
-// 			child.gen()
-// 		}
-// 	],
-// 	Factor => [
-// 		Number => |tok| -> Option<i32> {
-// 			Some(tok.val.parse().unwrap())
-// 		},
-// 		LBracket Expr RBracket => |_, child, _| -> _ {
-// 			child.gen()
-// 		}
-// 	]
+	S => [
+		Expr => |child| -> _ {
+			let res = child.gen().unwrap();
+			println!("{:?}", child);
+			Some(res)
+		}
+	],
+	Expr => [
+		Expr "+" Term => |lhs, _, rhs| -> _ {
+			Some(lhs.gen().unwrap() + rhs.gen().unwrap())
+		},
+		Expr "-" Term => |lhs, _, rhs| -> _ {
+			Some(lhs.gen().unwrap() - rhs.gen().unwrap())
+		},
+		Term => |child| -> _ {
+			child.gen()
+		}
+	],
+	Term => [
+		Term "*" Factor => |lhs, _, rhs| -> _ {
+			Some(lhs.gen().unwrap() * rhs.gen().unwrap())
+		},
+		Term "/" Factor => |lhs, _, rhs| -> _ {
+			Some(lhs.gen().unwrap() / rhs.gen().unwrap())
+		},
+		Factor => |child| -> _ {
+			child.gen()
+		}
+	],
+	Factor => [
+		Number => |tok| -> Option<i32> {
+			Some(tok.val.parse().unwrap())
+		},
+		"(" Expr ")" => |_, child, _| -> _ {
+			child.gen()
+		}
+	]
 
-// }
+}
 
-// #[test]
-// fn test_mathexpr() {
-// 	let parser = LRParser::<MathExpr>::new();
-// 	// println!("{}", parser.get_closure());
-// 	// println!("{}", parser.get_parse_table());
-// 	// println!("{:?}", parser.parse("aaaabbb"));
-// 	let res = parser.parse("4 * (2 + 1)");
-// 	println!("{:?}", res);
-// }
-
-// lang! {
-
-// 	Name = WTF
-// 	ValueType = i32
-
-// 	;;
-
-// 	b => r"b",
-// 	a => r"a"
-
-// 	// int => r"int",
-// 	// float => r"float",
-// 	// id => r"[0-9]+",
-// 	// comma => r","
-
-// 	// a => r"a",
-// 	// b => r"b",
-// 	// c => r"c",
-// 	// d => r"d",
-// 	// e => r"e"
-
-// 	;;
-
-// 	S => [
-// 		A S,
-// 		b
-// 	],
-// 	A => [
-// 		S A,
-// 		a
-// 	]
-
-// 	// decl => [
-// 	// 	ty var
-// 	// ],
-// 	// ty => [
-// 	// 	int,
-// 	// 	float
-// 	// ],
-// 	// var => [
-// 	// 	var comma id,
-// 	// 	id
-// 	// ]
-
-// 	// S => [
-// 	// 	a A d,
-// 	// 	b B d,
-// 	// 	a B e,
-// 	// 	b A e
-// 	// ],
-// 	// A => [
-// 	// 	c
-// 	// ],
-// 	// B => [
-// 	// 	c
-// 	// ]
-
-// }
-
-// #[test]
-// fn test_wtf() {
-// 	let parser = LRParser::<WTF>::new();
-// 	// println!("{}", parser.get_closure());
-// 	// println!("{}", parser.get_parse_table());
-// 	// println!("{:?}", parser.parse("aaaabbb"));
-// 	let res = parser.parse("int 0, 1, 2");
-// 	println!("{:?}", res);
-// }
+#[test]
+fn test_mathexpr() {
+	let parser = LRParser::<MathExpr>::new();
+	let res = parser.parse("4 * (2 + 1)");
+	println!("{:?}", res);
+}
 
 lang! {
 
@@ -144,8 +66,6 @@ lang! {
 
 	;;
 
-	If => r"if",
-	Else => r"else",
 	Id => r"[a-zA-Z_]+"
 
 	;;
@@ -154,8 +74,8 @@ lang! {
 		Stmt
 	],
 	Stmt => [
-		If Id Stmt Else Stmt,
-		If Id Stmt,
+		"if" Id Stmt "else" Stmt,
+		"if" Id Stmt,
 		Id
 	]
 
@@ -164,7 +84,8 @@ lang! {
 #[test]
 fn test_ifexpr() {
 	let parser = LRParser::<IfExpr>::new();
-	match parser.parse("if a b else else") {
+
+	match parser.parse("if a b else c") {
 		Ok(val) => println!("{:?}", val),
 		Err(err) => println!("{:?}", err),
 	}
