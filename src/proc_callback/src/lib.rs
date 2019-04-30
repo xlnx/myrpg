@@ -155,6 +155,7 @@ pub fn wrap_callback(input: TokenStream) -> TokenStream {
                     .into_iter()
                     .map(unwrap_single)
                     .map(|x| x.to_string())
+                    .filter(|x| x != "_")
                     .collect();
                 let mut idx = 0usize;
                 for symbol in symbols.iter() {

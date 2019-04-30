@@ -131,20 +131,21 @@ fn make_follow<T>(
 					}
 				}
 
-				let back = rule.symbols.iter().rev().next().unwrap();
-				let back_follow = follow.get(back).unwrap();
-				let mut new_follows = vec![];
-				if back.is_non_terminal() {
-					for follow_elem in follow.get(&src).unwrap() {
-						if !back_follow.contains(follow_elem) {
-							new_follows.push(*follow_elem);
+				if let Some(back) = rule.symbols.iter().rev().next() {
+					let back_follow = follow.get(back).unwrap();
+					let mut new_follows = vec![];
+					if back.is_non_terminal() {
+						for follow_elem in follow.get(&src).unwrap() {
+							if !back_follow.contains(follow_elem) {
+								new_follows.push(*follow_elem);
+							}
 						}
 					}
-				}
-				let back_follow_mut = follow.get_mut(back).unwrap();
-				for follow in new_follows {
-					back_follow_mut.insert(follow);
-					add_sub = true;
+					let back_follow_mut = follow.get_mut(back).unwrap();
+					for follow in new_follows {
+						back_follow_mut.insert(follow);
+						add_sub = true;
+					}
 				}
 			}
 		}
@@ -233,6 +234,7 @@ pub struct LRParser<'a, T: LRLang> {
 	lex_rules: Vec<(Symbol, Regex)>,
 	lex_rules_set: RegexSet,
 
+	closures: Vec<Closure<'a, T::Output>>,
 	grammar: Grammar<T::Output>,
 	symbols: Vec<Symbol>,
 	action: Vec<HashMap<Symbol, Action<'a, T::Output>>>,
@@ -406,7 +408,8 @@ where
 									Action::Accept => format!("Accept"),
 								};
 								panic!(format!(
-									"Conflict action found in this grammar:\n#0: {}\n#1: Reducing {:?}\nCan't build parse table",
+									"Conflict action found when receiving {:?}:\n#0: {}\n#1: Reducing {:?}\nCan't build parse table",
+									symbol,
 									prev,
 									item.rule
 								));
@@ -431,6 +434,7 @@ where
 			lex_rules_set,
 			grammar,
 			symbols,
+			closures,
 			action,
 			phantom: PhantomData,
 		};
@@ -540,16 +544,16 @@ where
 		} = env;
 		let state = *states.back().unwrap();
 		// println!("");
-		// println!("ast_stack = {:?}", ast_stack);
+		// // println!("ast_stack = {:?}", ast_stack);
 		// // let term_vec: Vec<_> = term_stack.iter().map(|x|decode(*x)).collect();
 		// println!("term_stack = {:?}", term_stack);
 		// println!("states = {:?}", states);
 		// // println!("action = {:?}", self.action[state]);
 		// println!(
-		//     "ACTION[{:?}][{:?}] = {:?}",
-		//     state,
-		//     symbol,
-		//     self.action[state].get(&symbol)
+		// 	"ACTION[{:?}][{:?}] = {:?}",
+		// 	state,
+		// 	symbol,
+		// 	self.action[state].get(&symbol)
 		// );
 		match self.action[state].get(&symbol) {
 			Some(action) => {
@@ -587,7 +591,10 @@ where
 			};
 			match self.do_match(symbol, &mut env) {
 				Ok(true) => break,
-				Err(err) => return Err(err),
+				Err(err) => {
+					println!("{:?}", self.closures[*env.states.back().unwrap()]);
+					return Err(err)
+				},
 				_ => {}
 			}
 		}

@@ -146,7 +146,11 @@ impl<T> Grammar<T> {
 		self
 	}
 	pub fn get_rule_set(&self, src: Symbol) -> &RuleSet<T> {
-		self.0.get(&src).unwrap()
+		if let Some(rule_set) = self.0.get(&src) {
+			rule_set
+		} else {
+			panic!(format!("Use of undeclared rule set: {:?}", src));
+		}
 	}
 	pub fn iter(&self) -> hash_map::Iter<Symbol, RuleSet<T>> {
 		self.0.iter()

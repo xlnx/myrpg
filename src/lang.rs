@@ -57,9 +57,9 @@ macro_rules! lang {
 				Option<Box<FnType>>
 			)> = vec![];
 		$({
-			let ss = vec![$(
+			let ss: Vec<_> = vec![$(
 				stringify!($b),
-			)*];
+			)*].into_iter().filter(|x| x != &"_").collect();
 			// let rule: (Vec<&str>, Option<Box<FnType>>) =
 			let cb: Option<Box<FnType>> =
 			if lang!(@any_expr $($cb)*) {
