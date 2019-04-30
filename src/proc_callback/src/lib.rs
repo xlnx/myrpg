@@ -36,6 +36,7 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
 
     let mut symbols = vec![];
     let mut terminals = vec![];
+    let mut new_terminals = vec![];
     let mut begin_terminal = false;
 
     while let Some(token) = input.next() {
@@ -54,8 +55,11 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
                             String::from("\"") + orig.as_str() + "\"",
                             (quote! { #reg }).into_iter().next().unwrap(),
                         );
-                        if terminals.iter().all(|x| x.0 != tok_literal) {
-                            terminals.push(terminal);
+                        if new_terminals
+                            .iter()
+                            .all(|x: &(String, TokenTree)| x.0 != tok_literal)
+                        {
+                            new_terminals.push(terminal);
                         }
                     }
                     _ => {
@@ -65,6 +69,9 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
             }
         }
     }
+
+    new_terminals.sort_by(|a, b| a.0.len().partial_cmp(&b.0.len()).unwrap());
+    terminals.append(&mut new_terminals);
 
     terminals = terminals.into_iter().rev().collect();
 
