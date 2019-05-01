@@ -7,7 +7,7 @@ use super::util::{AsString, ToDoc};
 
 #[derive(Clone)]
 pub struct Token<'a> {
-	pub(crate) symbol: Symbol,
+	pub symbol: Symbol,
 	pub val: &'a str,
 	pub pos: (u32, u32),
 }

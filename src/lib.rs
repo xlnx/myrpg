@@ -6,7 +6,7 @@ use regex::{Regex, RegexSet};
 #[macro_use]
 extern crate ref_thread_local;
 
-mod symbol;
+pub mod symbol;
 use symbol::*;
 
 mod util;
@@ -475,6 +475,7 @@ where
 				}
 				chunk.pos.1 += (t - beg) as u32;
 				chunk.text = &chunk.text[t..];
+				// println!("{:?}", tok);
 				return Some(tok);
 			}
 		}
@@ -592,9 +593,9 @@ where
 			match self.do_match(symbol, &mut env) {
 				Ok(true) => break,
 				Err(err) => {
-					println!("{:?}", self.closures[*env.states.back().unwrap()]);
-					return Err(err)
-				},
+					// println!("{:?}", self.closures[*env.states.back().unwrap()]);
+					return Err(err);
+				}
 				_ => {}
 			}
 		}

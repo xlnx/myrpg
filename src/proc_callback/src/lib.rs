@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use regex;
+use regex::Regex;
 // use syn::DeriveInput;
 use proc_macro2::TokenTree;
 
@@ -39,6 +39,8 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
     let mut new_terminals = vec![];
     let mut begin_terminal = false;
 
+    let sep_word = Regex::new("^.*\\b$").unwrap();
+
     while let Some(token) = input.next() {
         let tok_literal = unwrap_single(token).to_string();
         if tok_literal == "@" {
@@ -50,7 +52,13 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
             } else {
                 match unwrap_literal(tok_literal.as_str()) {
                     Some(orig) => {
-                        let reg = regex::escape(orig.as_str());
+                        let reg = regex::escape(orig.as_str())
+                            + if sep_word.is_match(orig.as_str()) {
+                                "\\b"
+                            } else {
+                                ""
+                            };
+                        // println!("{}", reg);
                         let terminal = (
                             String::from("\"") + orig.as_str() + "\"",
                             (quote! { #reg }).into_iter().next().unwrap(),

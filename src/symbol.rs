@@ -20,9 +20,6 @@ impl Symbol {
 	pub fn is_non_terminal(&self) -> bool {
 		self.0 < 0
 	}
-	pub fn is_bottom(&self) -> bool {
-		self.0 == 0
-	}
 	pub fn from(s: &str) -> Self {
 		hash(s)
 	}
@@ -41,7 +38,7 @@ impl std::fmt::Debug for Symbol {
 	}
 }
 
-pub const BOTTOM: Symbol = Symbol(0);
+pub(crate) const BOTTOM: Symbol = Symbol(0);
 
 ref_thread_local! {
 	static managed SYMBOL: HashMap<Symbol, String> = HashMap::new();
@@ -59,7 +56,7 @@ fn hash(x: &str) -> Symbol {
 	SYMBOL
 		.borrow_mut()
 		.insert(val.as_non_terminal(), String::from(x));
-	// println!("{} => {} | {}", x, val, !val);
+	// println!("{} => {:?}", x, val);
 	val
 }
 
