@@ -35,7 +35,7 @@ pub struct Ast<'a, T> {
 
 impl<'a, T> Ast<'a, T> {
 	pub fn gen(&self) -> Option<T> {
-		(*self.rule.handler)(&self)
+		(*self.rule.handle_exec)(&self)
 	}
 }
 

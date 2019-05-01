@@ -13,7 +13,7 @@ macro_rules! lang {
 		@
 		$(
 			$a: ident => [
-				$( $($b: pat)* $(=> $(@ $attr: ident)? $cb: expr)?),*
+				$( $($b: pat)* $(=> $(@ $attr: ident)* $cb: expr)*),*
 			]
 		),*
 	) => {{
@@ -21,7 +21,7 @@ macro_rules! lang {
 				&'a str,
 				Vec<(
 					Vec<&'a str>,
-					Option<Box<FnType>>
+					EventsType
 				)>
 			)> = vec![];
 
@@ -29,7 +29,7 @@ macro_rules! lang {
 			lng.push((
 				stringify!($a),
 				lang!(@expand_param $res ;; $tuple @
-					$( $($b)* $(=> $(@ $attr)? $cb)?),*
+					$( $($b)* $(=> $(@ $attr)* $cb)*),*
 				)
 			));
 		})*
@@ -39,7 +39,7 @@ macro_rules! lang {
 			"@",
 			vec![(
 				vec![s],
-				None
+				(None, None)
 			)]
 		));
 
@@ -50,56 +50,46 @@ macro_rules! lang {
 		;;
 		$tuple: tt
 		@
-		$( $($b: pat)* $(=> $(@ $attr: ident)? $cb: expr)?),*
+		$( $($b: pat)* $(=> $(@ $attr: ident)* $cb: expr)*),*
 	) => { {
 		let mut rules: Vec<(
 				Vec<&'a str>,
-				Option<Box<FnType>>
+				EventsType
 			)> = vec![];
 		$({
 			let ss: Vec<_> = vec![$(
 				stringify!($b),
 			)*].into_iter().filter(|x| x != &"_").collect();
-			// let rule: (Vec<&str>, Option<Box<FnType>>) =
-			let cb: Option<Box<FnType>> =
+
+			let evt: EventsType =
 			if lang!(@any_expr $($cb)*) {
-				lang!(@expand_callback_del
+				lang!(@expand_callback
 					$res
 					;;
 					$tuple
 					@
 					($($b)*)
 					@
-					$($(@ $attr)? $cb)?
+					$($(@ $attr)* $cb)*
 				)
 			} else {
-				None
+				(None, None)
 			};
-			rules.push((ss, cb));
+			rules.push((ss, evt));
 		})*
 		rules
 	} };
-	(@expand_callback_del
-		$res: ty ;; $terms: tt @ $patts: tt @
-		$($(@ $attr: ident)? $cb: expr)?
-	) => { {
-		None as Option<Box<FnType>>
-		$(
-			;lang!(@expand_callback $res ;; $terms @ $patts @ ($($attr)?) @ $cb)
-		)?
-	} };
 	(@expand_callback
-		$res: ty ;; $terms: tt @ $patts: tt @ $attr: tt @
-		$cb: expr
+		$res: ty ;; $terms: tt @ $patts: tt @
+		$($(@ $attr: ident)* $cb: expr)*
 	) => { {
-		Some({
+		{
 			struct __Dummy;
 			impl __Dummy {
-				wrap_callback!($res $terms $patts $attr $cb);
+				wrap_callback!($res $terms $patts $( ( ($($attr)*) $cb ) )* );
 			}
 			__Dummy::apply()
-		})
-		// Some(cb.wrap())
+		}
 	} };
 
 	(
@@ -107,12 +97,12 @@ macro_rules! lang {
 		ValueType = $res: ty
 		;;
 		$(
-			$l: ident => $reg: expr
+			$l: ident => $reg: expr $(=> $lcb: expr)?
 		),* $(,)?
 		;;
 		$(
 			$a: ident => [
-				$( $($b: pat)* $(=> $(@ $attr: ident)? $cb: expr)?),* $(,)?
+				$( $($b: pat)* $(=> $(@ $attr: ident)* $cb: expr)*),* $(,)?
 			]
 		),* $(,)?
 	) => {
@@ -121,21 +111,28 @@ macro_rules! lang {
 			type Output = $res;
 
 			fn new<'a>() -> (
-				Vec<(&'a str, &'a str)>,
+				Vec<(&'a str, &'a str, Option<Box<Fn(&mut Token) -> ()>>)>,
 				Vec<(
 					&'a str,
 					Vec<(
 						Vec<&'a str>,
-						Option<Box<Fn(&Ast<$res>) -> Option<$res>>>
+						(
+							Option<Box<Fn(&Ast<$res>) -> Option<$res>>>,
+							Option<Box<Fn(&mut Ast<$res>) -> ()>>,
+						)
 					)>
 				)>
 			) {
-				type FnType = Fn(&Ast<$res>) -> Option<$res>;
+
+				type EventsType = (
+					Option<Box<Fn(&Ast<$res>) -> Option<$res>>>,
+					Option<Box<Fn(&mut Ast<$res>) -> ()>>,
+				);
 
 				let (lex, non_terminals) = {
 					struct __Dummy;
 					impl __Dummy {
-						classify_symbols!($($l $reg)* @ $($a)* $($($($b)*)*)*);
+						classify_symbols!($($l $reg ($($lcb)?) )* @ $($a)* $($($($b)*)*)*);
 					}
 					__Dummy::apply()
 				};
@@ -143,7 +140,7 @@ macro_rules! lang {
 				let lng = lang!(@expand_grammar $res ;; ($($l)*) @
 					$(
 						$a => [
-							$( $($b)* $(=> $(@ $attr)? $cb)?),*
+							$( $($b)* $(=> $(@ $attr)* $cb)*),*
 						]
 					),*
 				);

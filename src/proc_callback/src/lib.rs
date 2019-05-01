@@ -42,13 +42,24 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
     let sep_word = Regex::new("^.*\\b$").unwrap();
 
     while let Some(token) = input.next() {
+        // println!("{:?}", token);
         let tok_literal = unwrap_single(token).to_string();
         if tok_literal == "@" {
             terminals = terminals.into_iter().rev().collect();
             begin_terminal = true;
         } else {
             if !begin_terminal {
-                terminals.push((tok_literal, input.next().unwrap()));
+                let reg = input.next().unwrap();
+                if let Some(TokenTree::Group(cb)) = input.next() {
+                    let cb = if let Some(cb) = cb.stream().into_iter().next() {
+                        quote! { Some(Box::new(move #cb)) }
+                    } else {
+                        quote! { None }
+                    };
+                    terminals.push((tok_literal, quote! {#reg}, cb));
+                } else {
+                    panic!();
+                }
             } else {
                 match unwrap_literal(tok_literal.as_str()) {
                     Some(orig) => {
@@ -61,12 +72,14 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
                         // println!("{}", reg);
                         let terminal = (
                             String::from("\"") + orig.as_str() + "\"",
-                            (quote! { #reg }).into_iter().next().unwrap(),
+                            quote! { #reg },
+                            quote! { None },
                         );
-                        if new_terminals
-                            .iter()
-                            .all(|x: &(String, TokenTree)| x.0 != tok_literal)
-                        {
+                        if new_terminals.iter().all(
+                            |x: &(String, proc_macro2::TokenStream, proc_macro2::TokenStream)| {
+                                x.0 != tok_literal
+                            },
+                        ) {
                             new_terminals.push(terminal);
                         }
                     }
@@ -94,12 +107,16 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
     }
 
     let mut terminals_quote = quote! {
-        let mut terminals = vec![];
+        let mut terminals: Vec<(
+            &'static str,
+            &'static str,
+            Option<Box<Fn(&mut Token) -> ()>>,
+        )> = vec![];
     };
-    for (terminal, regex) in terminals.iter() {
+    for (terminal, regex, callback) in terminals.iter() {
         terminals_quote = quote! {
             #terminals_quote
-            terminals.push((#terminal, #regex));
+            terminals.push((#terminal, #regex, #callback));
         };
     }
 
@@ -107,7 +124,8 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
     // println!("{:?}", terminals);
 
     let output = quote! {
-        fn apply() -> (Vec<(&'static str, &'static str)>, ::std::collections::HashSet<&'static str>) {
+        fn apply() -> (Vec<(&'static str, &'static str, Option<Box<Fn(&mut Token) -> ()>>)>,
+                ::std::collections::HashSet<&'static str>) {
             ({ #terminals_quote terminals },
             { #non_terminals_quote non_terminals })
         }
@@ -125,84 +143,112 @@ pub fn wrap_callback(input: TokenStream) -> TokenStream {
     let res = input.next().unwrap();
     let terminals = input.next().unwrap();
     let symbols = input.next().unwrap();
-    let attr = input.next().unwrap();
-    let callback = input.next().unwrap();
 
-    if let TokenTree::Group(attr) = attr {
-        if let (
-            TokenTree::Group(terminals),
-            TokenTree::Group(symbols),
-            TokenTree::Group(callback),
-        ) = (terminals, symbols, callback)
-        {
+    // let attr = input.next().unwrap();
+    // let callback = input.next().unwrap();
 
-            if let Some(attr) = attr.stream().into_iter().next() {
+    let res_type = quote! {(
+        Option<Box<Fn(&Ast<#res>) -> Option<#res>>>,
+        Option<Box<Fn(&mut Ast<#res>) -> ()>>,
+    )};
 
-                match unwrap_single(attr).to_string().as_str() {
+    let mut src = quote! {};
 
-                    "raw" => {
-                        let output = quote! {
-                            fn apply() -> Box<Fn(&Ast<#res>) -> Option<#res>> {
-                                Box::new(#callback)
+    if let (TokenTree::Group(terminals), TokenTree::Group(symbols)) = (terminals, symbols) {
+
+        let terminals: HashSet<_> = terminals
+            .stream()
+            .into_iter()
+            .map(unwrap_single)
+            .map(|x| x.to_string())
+            .collect();
+        let symbols: Vec<_> = symbols
+            .stream()
+            .into_iter()
+            .map(unwrap_single)
+            .map(|x| x.to_string())
+            .filter(|x| x != "_")
+            .collect();
+
+        while let Some(TokenTree::Group(event)) = input.next() {
+
+            let mut stream = event.stream().into_iter();
+            let mut attrs = HashSet::new();
+
+            if let Some(TokenTree::Group(attr_stream)) = stream.next() {
+                let mut attr_stream = attr_stream.stream().into_iter();
+                while let Some(attr) = attr_stream.next() {
+                    attrs.insert(unwrap_single(attr).to_string());
+                }
+            } else {
+                panic!();
+            }
+
+            if let Some(TokenTree::Group(callback)) = stream.next() {
+
+                let mut callback = quote! { #callback };
+
+                if attrs.contains("reduce") {
+                    src = quote! {
+                        #src
+                        evt.1 = Some(Box::new(#callback));
+                    };
+                } else {
+                    if !attrs.contains("raw") {
+                        let ast = quote! { &Ast<#res> };
+                        let tok = quote! { &Token };
+                        let mut type_param = quote! {};
+                        let mut dest = quote! {};
+                        let mut idx = 0usize;
+                        for symbol in symbols.iter() {
+                            if terminals.contains(symbol)
+                                || unwrap_literal(symbol.as_str()).is_some()
+                            {
+                                // is terminal
+                                type_param = quote! { #type_param #tok, };
+                                dest = quote! { #dest ast.childs[#idx].as_token(), };
+                            } else {
+                                // else
+                                type_param = quote! { #type_param #ast, };
+                                dest = quote! { #dest ast.childs[#idx].as_ast(), };
+                            }
+                            idx += 1;
+                        }
+                        let fn_type = quote! { Fn(#type_param) -> Option<#res> };
+                        callback = quote! {
+                            {
+                                let cb: Box<#fn_type> = Box::new(#callback);
+                                Box::new(move |ast: &Ast<#res>| -> Option<#res> {
+                                    cb(#dest)
+                                })
                             }
                         };
-                        output.into()
-                    }
-                    any @ _ => {
-                        panic!(format!("Unknown wrapping attribute: {}", any));
                     }
 
+                    src = quote! {
+                        #src
+                        evt.0 = Some(Box::new(#callback));
+                    }
                 }
-
             } else {
-                let ast = quote! { &Ast<#res> };
-                let tok = quote! { &Token };
-                let mut type_param = quote! {};
-                let mut dest = quote! {};
-                let terminals: HashSet<_> = terminals
-                    .stream()
-                    .into_iter()
-                    .map(unwrap_single)
-                    .map(|x| x.to_string())
-                    .collect();
-                let symbols: Vec<_> = symbols
-                    .stream()
-                    .into_iter()
-                    .map(unwrap_single)
-                    .map(|x| x.to_string())
-                    .filter(|x| x != "_")
-                    .collect();
-                let mut idx = 0usize;
-                for symbol in symbols.iter() {
-                    if terminals.contains(symbol) || unwrap_literal(symbol.as_str()).is_some() {
-                        // is terminal
-                        type_param = quote! { #type_param #tok, };
-                        dest = quote! { #dest ast.childs[#idx].as_token(), };
-                    } else {
-                        // else
-                        type_param = quote! { #type_param #ast, };
-                        dest = quote! { #dest ast.childs[#idx].as_ast(), };
-                    }
-                    idx += 1;
-                }
-                let fn_type = quote! { Fn(#type_param) -> Option<#res> };
-
-                let output = quote! {
-                    fn apply() -> Box<Fn(&Ast<#res>) -> Option<#res>> {
-                        let cb: Box<#fn_type> = Box::new(#callback);
-                        Box::new(move |ast: &Ast<#res>| -> Option<#res> {
-                            cb(#dest)
-                        })
-                    }
-                };
-                // println!("YIELDS    ==>   {}", output.to_string());
-                output.into()
+                panic!();
             }
-        } else {
-            panic!();
+
+            // println!("{}", src.to_string());
+
         }
     } else {
         panic!();
     }
+
+    let output = quote! {
+        fn apply() -> #res_type {
+            let mut evt: #res_type = (None, None);
+            #src
+            evt
+        }
+    };
+    // println!("YIELDS    ==>   {}", output.to_string());
+    output.into()
 
 }

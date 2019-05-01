@@ -11,7 +11,9 @@ pub struct Rule<T> {
 	pub ast_cnt: u16,
 	pub term_cnt: u16,
 	pub symbols: Vec<Symbol>,
-	pub handler: Box<Fn(&Ast<T>) -> Option<T>>,
+
+	pub handle_reduce: Option<Box<Fn(&mut Ast<T>) -> ()>>,
+	pub handle_exec: Box<Fn(&Ast<T>) -> Option<T>>,
 }
 
 impl<T> Rule<T> {
@@ -31,11 +33,13 @@ impl<T> Rule<T> {
 			ast_cnt: 0,
 			term_cnt: 0,
 			symbols: vec![],
-			handler: Box::new(|ast: &Ast<T>| -> Option<T> {
+
+			handle_reduce: None,
+			handle_exec: Box::new(|ast: &Ast<T>| -> Option<T> {
 				let mut res = None;
 				for ast in ast.childs.iter() {
 					if let AstNode::Ast(ast) = ast {
-						res = (*ast.rule.handler)(&ast);
+						res = (*ast.rule.handle_exec)(&ast);
 					}
 				}
 				res
@@ -56,17 +60,6 @@ impl<T> Rule<T> {
 				rule.term_cnt += 1;
 			}
 		}
-		rule
-	}
-	pub fn from_with_handler(
-		id: usize,
-		src: Symbol,
-		symbol_literals: &Vec<&str>,
-		terminals: &HashSet<Symbol>,
-		handler: Box<Fn(&Ast<T>) -> Option<T>>,
-	) -> Self {
-		let mut rule = Self::from(id, src, symbol_literals, terminals);
-		rule.handler = handler;
 		rule
 	}
 }

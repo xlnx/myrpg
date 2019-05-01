@@ -218,12 +218,15 @@ pub trait LRLang {
 	type Output;
 
 	fn new<'a>() -> (
-		Vec<(&'a str, &'a str)>,
+		Vec<(&'a str, &'a str, Option<Box<Fn(&mut Token) -> ()>>)>,
 		Vec<(
 			&'a str,
 			Vec<(
 				Vec<&'a str>,
-				Option<Box<Fn(&Ast<Self::Output>) -> Option<Self::Output>>>,
+				(
+					Option<Box<Fn(&Ast<Self::Output>) -> Option<Self::Output>>>,
+					Option<Box<Fn(&mut Ast<Self::Output>) -> ()>>,
+				),
 			)>,
 		)>,
 	);
@@ -231,7 +234,7 @@ pub trait LRLang {
 
 #[allow(dead_code)]
 pub struct LRParser<'a, T: LRLang> {
-	lex_rules: Vec<(Symbol, Regex)>,
+	lex_rules: Vec<(Symbol, Regex, Option<Box<Fn(&mut Token) -> ()>>)>,
 	lex_rules_set: RegexSet,
 
 	closures: Vec<Closure<'a, T::Output>>,
@@ -274,16 +277,16 @@ where
 		let mut lex_rules = vec![];
 
 		let mut symbols = vec![];
-		for (lex_name, lex_patt) in lex.iter() {
+		for (lex_name, lex_patt, lex_cb) in lex.into_iter() {
 			let symbol = Symbol::from(lex_name).as_terminal();
 			symbols.push(symbol);
 			let patt = format!(r"^\s*({})", lex_patt);
-			lex_rules.push((symbol, patt));
+			lex_rules.push((symbol, patt, lex_cb));
 		}
 		let lex_rules_set = RegexSet::new(lex_rules.iter().map(|x| &x.1)).unwrap();
 		let lex_rules: Vec<_> = lex_rules
 			.into_iter()
-			.map(|x| (x.0, Regex::new(&x.1).unwrap()))
+			.map(|x| (x.0, Regex::new(&x.1).unwrap(), x.2))
 			.collect();
 		let terms_set: HashSet<Symbol> = symbols.iter().map(|x| *x).collect();
 
@@ -293,12 +296,17 @@ where
 		for (lang_item, lang_rules) in lang.into_iter() {
 			let src = Symbol::from(lang_item).as_non_terminal();
 			let mut rules = vec![];
-			for (lang_patts, lang_cb) in lang_rules.into_iter() {
+			for (lang_patts, lang_evt) in lang_rules.into_iter() {
 				let ss = lang_patts;
-				let rule = if let Some(cb) = lang_cb {
-					Rule::from_with_handler(rule_id, src, &ss, &terms_set, cb)
-				} else {
-					Rule::from(rule_id, src, &ss, &terms_set)
+				let rule = {
+					let mut rule = Rule::from(rule_id, src, &ss, &terms_set);
+					if let Some(handle_exec) = lang_evt.0 {
+						rule.handle_exec = handle_exec;
+					}
+					if let Some(handle_reduce) = lang_evt.1 {
+						rule.handle_reduce = Some(handle_reduce);
+					}
+					rule
 				};
 				rule_id += 1;
 				rules.push(rule);
@@ -449,7 +457,7 @@ where
 		// println!("{:?}", self.lex_rules);
 		// println!("{:?}", self.lex_rules_set);
 		// self.lex_rules_set.ma
-		for (val, rule) in self.lex_rules.iter() {
+		for (val, rule, cb) in self.lex_rules.iter() {
 			if let Some(caps) = rule.captures(chunk.text) {
 				let m = caps.get(1).unwrap();
 				let (s, t) = (m.start(), m.end());
@@ -461,7 +469,7 @@ where
 				}
 				chunk.pos.1 += (s - beg) as u32;
 				// .find('\n');
-				let tok = Token {
+				let mut tok = Token {
 					symbol: *val,
 					val: &chunk.text[s..t],
 					pos: chunk.pos,
@@ -476,6 +484,9 @@ where
 				chunk.pos.1 += (t - beg) as u32;
 				chunk.text = &chunk.text[t..];
 				// println!("{:?}", tok);
+				if let Some(cb) = cb {
+					(*cb)(&mut tok);
+				}
 				return Some(tok);
 			}
 		}
@@ -513,11 +524,14 @@ where
 			}
 		}
 
-		let ast = Ast {
+		let mut ast = Ast {
 			symbol: rule.src,
 			childs,
 			rule,
 		};
+		if let Some(ref handle_reduce) = rule.handle_reduce {
+			(*handle_reduce)(&mut ast);
+		}
 		// println!(
 		//     "yields => {:?}",
 		//     ast // decode(id)
@@ -606,6 +620,6 @@ where
 		} = env;
 		let ast = deq_ast.remove(0).unwrap();
 
-		Ok((*ast.rule.handler)(&ast))
+		Ok((*ast.rule.handle_exec)(&ast))
 	}
 }
