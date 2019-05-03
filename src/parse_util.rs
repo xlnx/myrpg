@@ -266,101 +266,67 @@ impl<'a> ParsingError<'a> {
             (
                 pos.1 as usize,
                 self.token.as_ref().unwrap().val.len() + pos.1 as usize,
-                format!("{}:{}: Unexpected Token: {:?}", pos.0, pos.1, val),
+                format!("{}: Unexpected Token: {:?}", "error".red(), val),
             )
         } else {
             (
                 trimmed.len(),
                 trimmed.len() + 1,
-                format!("{}:{}: Unexpected EOF", self.chunk.pos.0, self.chunk.pos.1),
+                format!("{}: Unexpected EOF", "error".red()),
             )
         };
 
         let mut pos = [begin, end];
         let trimmed = replace_tab(trimmed, &mut pos);
-
-        //        let (begin, end) = (pos[0], pos[1]);
         let [begin, end] = pos;
 
-        writeln!(res, "{}", msg).unwrap();
+        writeln!(res, "{}", msg.bold()).unwrap();
+
+        let anchor_num = format!("{} |", self.chunk.pos.0 + 1);
+        let anchor = format!("{:width$} |", "", width = anchor_num.len() - 2);
+
+        writeln!(
+            res,
+            "{:>width$} {}:{}:{}",
+            "-->".blue().bold(),
+            "file",
+            self.chunk.pos.0 + 1,
+            self.chunk.pos.1 + 1,
+            width = anchor_num.len() + 1
+        );
+
+        writeln!(res, "{}", anchor.blue().bold());
 
         write!(
             res,
-            " {:>4} |{}",
-            self.chunk.pos.0 + 1,
+            "{}{}",
+            anchor_num.blue().bold(),
             &trimmed.as_str()[..begin]
         )
         .unwrap();
         write!(res, "{}", &trimmed.as_str()[begin..end].red()).unwrap();
         writeln!(res, "{}", &trimmed.as_str()[end..]).unwrap();
+
         write!(
             res,
-            " {:>4} |{}",
-            "",
+            "{}{}",
+            anchor.blue().bold(),
             std::iter::repeat(' ').take(begin).collect::<String>()
         )
         .unwrap();
-        write!(res, "{}", "^".red()).unwrap();
         writeln!(
             res,
             "{}",
-            std::iter::repeat('~')
-                .take(end - begin - 1)
+            std::iter::repeat('^')
+                .take(end - begin)
                 .collect::<String>()
+                .red()
+                .bold()
         )
         .unwrap();
-        //        writeln!(
-        //            res,
-        //            "{}:{}: Unexpected EOF",
-        //            self.chunk.pos.0, self.chunk.pos.1
-        //        )
-        //            .unwrap();
-        //        res
+
         String::from_utf8(res).unwrap()
     }
-    //    pub fn write_to(&self, writer: &mut Write) -> io::Result<()> {
-    //        let line = String::from(
-    //            if let Some(pos) = self.chunk.line.find(|c: char| c == '\n') {
-    //                &self.chunk.line[..pos]
-    //            } else {
-    //                self.chunk.line
-    //            },
-    //        );
-    //        let trimmed = line.trim_end();
-    //        writeln!(writer, "{}", trimmed)?;
-    //        if let Some(Token { val, pos, .. }) = self.token {
-    //            write!(
-    //                writer,
-    //                "{}^",
-    //                std::iter::repeat(' ')
-    //                    .take(pos.1 as usize)
-    //                    .collect::<String>()
-    //            )?;
-    //            writeln!(
-    //                writer,
-    //                "{}",
-    //                std::iter::repeat('~')
-    //                    .take(self.token.as_ref().unwrap().val.len() - 1)
-    //                    .collect::<String>()
-    //            )?;
-    //            writeln!(writer, "{}:{}: Unexpected Token: {:?}", pos.0, pos.1, val)?;
-    //        } else {
-    //            writeln!(
-    //                writer,
-    //                "{}^",
-    //                std::iter::repeat(' ')
-    //                    .take(trimmed.len())
-    //                    .collect::<String>()
-    //            )?;
-    //            writeln!(
-    //                writer,
-    //                "{}:{}: Unexpected EOF",
-    //                self.chunk.pos.0, self.chunk.pos.1
-    //            )?;
-    //        }
-    //
-    //        Ok(())
-    //    }
 }
 
 pub struct ParseEnv<'a, T> {
