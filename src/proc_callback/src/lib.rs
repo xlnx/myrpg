@@ -2,7 +2,6 @@ extern crate proc_macro;
 
 use std::collections::HashSet;
 
-
 use proc_macro::TokenStream;
 use quote::quote;
 use regex::Regex;
@@ -31,7 +30,6 @@ fn unwrap_literal(token: &str) -> Option<String> {
 
 #[proc_macro]
 pub fn classify_symbols(input: TokenStream) -> TokenStream {
-
     let mut input = proc_macro2::TokenStream::from(input).into_iter();
 
     let mut symbols = vec![];
@@ -132,12 +130,10 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
     };
 
     output.into()
-
 }
 
 #[proc_macro]
 pub fn wrap_callback(input: TokenStream) -> TokenStream {
-
     let mut input = proc_macro2::TokenStream::from(input).into_iter();
 
     let res = input.next().unwrap();
@@ -155,7 +151,6 @@ pub fn wrap_callback(input: TokenStream) -> TokenStream {
     let mut src = quote! {};
 
     if let (TokenTree::Group(terminals), TokenTree::Group(symbols)) = (terminals, symbols) {
-
         let terminals: HashSet<_> = terminals
             .stream()
             .into_iter()
@@ -171,7 +166,6 @@ pub fn wrap_callback(input: TokenStream) -> TokenStream {
             .collect();
 
         while let Some(TokenTree::Group(event)) = input.next() {
-
             let mut stream = event.stream().into_iter();
             let mut attrs = HashSet::new();
 
@@ -185,7 +179,6 @@ pub fn wrap_callback(input: TokenStream) -> TokenStream {
             }
 
             if let Some(TokenTree::Group(callback)) = stream.next() {
-
                 let mut callback = quote! { #callback };
 
                 if attrs.contains("reduce") {
@@ -235,7 +228,6 @@ pub fn wrap_callback(input: TokenStream) -> TokenStream {
             }
 
             // println!("{}", src.to_string());
-
         }
     } else {
         panic!();
@@ -250,5 +242,4 @@ pub fn wrap_callback(input: TokenStream) -> TokenStream {
     };
     // println!("YIELDS    ==>   {}", output.to_string());
     output.into()
-
 }
