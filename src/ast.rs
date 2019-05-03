@@ -1,15 +1,30 @@
 use pretty::{Doc, *};
+use serde::{Serialize, Serializer, ser::{SerializeStruct, SerializeTuple} };
 
 
 use super::rule::Rule;
 use super::symbol::Symbol;
 use super::util::{AsString, ToDoc};
+use super::formatter::{AstFormatter};
 
 #[derive(Clone)]
 pub struct Token<'a> {
 	pub symbol: Symbol,
 	pub val: &'a str,
 	pub pos: (u32, u32),
+}
+
+impl<'a> Serialize for Token<'a> {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+		where
+			S: Serializer {
+		let mut seq = serializer.serialize_tuple(2 )?;
+		{
+			seq.serialize_element(&self.symbol)?;
+			seq.serialize_element(&self.val)?;
+		}
+		seq.end()
+	}
 }
 
 impl<'a> Token<'a> {
@@ -27,15 +42,43 @@ impl<'a> std::fmt::Debug for Token<'a> {
 	}
 }
 
+//#[derive(Serialize)]
 pub struct Ast<'a, T> {
-	pub(crate) symbol: Symbol,
-	pub childs: Vec<AstNode<'a, T>>,
+	pub symbol: Symbol,
+	pub children: Vec<AstNode<'a, T>>,
 	pub(crate) rule: &'a Rule<T>,
+}
+
+impl<'a, T> Serialize for Ast<'a, T> {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer {
+		let mut state = serializer.serialize_struct("Ast", 2)?;
+		{
+			state.serialize_field("type", &self.symbol)?;
+			state.serialize_field("children", &self.children)?;
+		}
+		state.end()
+	}
 }
 
 impl<'a, T> Ast<'a, T> {
 	pub fn gen(&self) -> Option<T> {
 		(*self.rule.handle_exec)(&self)
+	}
+	pub fn to_json(&self) -> String {
+		serde_json::to_string(&self).unwrap()
+	}
+	pub fn to_json_pretty(&self) -> String {
+		let mut w = Vec::with_capacity(128);
+		let fmt = AstFormatter::new();
+		let mut ser = serde_json::Serializer::with_formatter(&mut w, fmt);
+		self.serialize(&mut ser);
+		let string = unsafe {
+			// We do not emit invalid UTF-8.
+			String::from_utf8_unchecked(w)
+		};
+		string
 	}
 }
 
@@ -48,10 +91,10 @@ impl<'a, T> std::fmt::Debug for Ast<'a, T> {
 impl<'a, T> ToDoc for Ast<'a, T> {
 	fn to_doc(&self) -> Doc<BoxDoc<()>> {
 		let doc = Doc::Newline.append(Doc::as_string(self.symbol.as_str()));
-		if self.childs.len() > 0 {
+		if self.children.len() > 0 {
 			doc.append(Doc::text("{"))
 				.append(
-					Doc::intersperse(self.childs.iter().map(|x| x.to_doc()), Doc::Nil)
+					Doc::intersperse(self.children.iter().map(|x| x.to_doc()), Doc::Nil)
 						.nest(2)
 						.group(),
 				)
@@ -67,6 +110,17 @@ impl<'a, T> ToDoc for Ast<'a, T> {
 pub enum AstNode<'a, T> {
 	Ast(Ast<'a, T>),
 	Token(Token<'a>),
+}
+
+impl<'a, T> Serialize for AstNode<'a, T> {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+		where
+			S: Serializer {
+		match &self {
+			AstNode::Ast(ast) => serializer.serialize_some(ast),
+			AstNode::Token(tok) => serializer.serialize_some(tok),
+		}
+	}
 }
 
 impl<'a, T> ToDoc for AstNode<'a, T> {

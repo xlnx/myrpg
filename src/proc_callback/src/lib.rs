@@ -206,11 +206,11 @@ pub fn wrap_callback(input: TokenStream) -> TokenStream {
                             {
                                 // is terminal
                                 type_param = quote! { #type_param #tok, };
-                                dest = quote! { #dest ast.childs[#idx].as_token(), };
+                                dest = quote! { #dest ast.children[#idx].as_token(), };
                             } else {
                                 // else
                                 type_param = quote! { #type_param #ast, };
-                                dest = quote! { #dest ast.childs[#idx].as_ast(), };
+                                dest = quote! { #dest ast.children[#idx].as_ast(), };
                             }
                             idx += 1;
                         }

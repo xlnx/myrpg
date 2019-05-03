@@ -1,10 +1,11 @@
+#[macro_use]
+extern crate ref_thread_local;
+extern crate serde_json;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::marker::PhantomData;
 
-
 use regex::{Regex, RegexSet};
-#[macro_use]
-extern crate ref_thread_local;
 
 pub mod symbol;
 use symbol::*;
@@ -28,6 +29,8 @@ pub mod lang;
 
 mod index;
 use index::*;
+
+mod formatter;
 
 pub use proc_callback::*;
 
@@ -512,21 +515,21 @@ where
 		let len = states.len();
 		states.split_off(len - ast_size - term_size);
 
-		let mut childs = vec![];
+		let mut children = vec![];
 		let mut it_ast = sub_ast.into_iter();
 		let mut it_term = sub_term.into_iter();
 
 		for dummy in rule.iter() {
 			if dummy.is_non_terminal() {
-				childs.push(AstNode::Ast(it_ast.next().unwrap()));
+				children.push(AstNode::Ast(it_ast.next().unwrap()));
 			} else {
-				childs.push(AstNode::Token(it_term.next().unwrap()));
+				children.push(AstNode::Token(it_term.next().unwrap()));
 			}
 		}
 
 		let mut ast = Ast {
 			symbol: rule.src,
-			childs,
+			children,
 			rule,
 		};
 		if let Some(ref handle_reduce) = rule.handle_reduce {
@@ -594,7 +597,7 @@ where
 		}
 	}
 
-	pub fn parse(&self, text: &'a str) -> Result<Option<T::Output>, ParsingError<'a>> {
+	pub fn parse(&self, text: &'a str) -> Result<Ast<T::Output>, ParsingError<'a>> {
 		let mut env = ParseEnv::from(text);
 		env.token = self.next(&mut env.chunk);
 
@@ -620,6 +623,6 @@ where
 		} = env;
 		let ast = deq_ast.remove(0).unwrap();
 
-		Ok((*ast.rule.handle_exec)(&ast))
+		Ok(ast)
 	}
 }

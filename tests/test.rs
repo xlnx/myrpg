@@ -15,7 +15,7 @@ lang! {
 	S => [
 		Expr => |child| -> _ {
 			let res = child.gen().unwrap();
-			println!("{:?}", child);
+//			println!("{:?}", child);
 			Some(res)
 		}
 	],
@@ -56,7 +56,7 @@ lang! {
 fn test_mathexpr() {
 	let parser = LRParser::<MathExpr>::new();
 	let res = parser.parse("4 * (2 + 1)");
-	println!("{:?}", res);
+//	println!("{:?}", res);
 }
 
 lang! {
@@ -86,7 +86,11 @@ fn test_ifexpr() {
 	let parser = LRParser::<IfExpr>::new();
 
 	match parser.parse("if a b else c") {
-		Ok(val) => println!("{:?}", val),
+		Ok(ast) => {
+			let val = ast.to_json_pretty();
+			println!("{}", val);
+//			println!("{:?}", val)
+		},
 		Err(err) => println!("{:?}", err),
 	}
 }

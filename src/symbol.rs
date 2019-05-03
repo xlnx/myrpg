@@ -3,9 +3,18 @@ use std::fmt::Formatter;
 use std::hash::*;
 
 use ref_thread_local::RefThreadLocal;
+use serde::{Serialize, Serializer};
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Symbol(i64);
+
+impl Serialize for Symbol {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer{
+		serializer.serialize_str(self.as_str())
+	}
+}
 
 impl Symbol {
 	pub fn as_non_terminal(self) -> Symbol {

@@ -37,7 +37,7 @@ impl<T> Rule<T> {
 			handle_reduce: None,
 			handle_exec: Box::new(|ast: &Ast<T>| -> Option<T> {
 				let mut res = None;
-				for ast in ast.childs.iter() {
+				for ast in ast.children.iter() {
 					if let AstNode::Ast(ast) = ast {
 						res = (*ast.rule.handle_exec)(&ast);
 					}

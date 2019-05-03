@@ -4,11 +4,14 @@ version = "0.1.0"
 authors = ["KoishiChan <qwq@koishi.top>"]
 edition = "2018"
 
+[lib]
+name = "myrpg"
+
 [dependencies]
 regex = "1.1.6"
 ref_thread_local = "0.0.0"
 pretty = "0.5.2"
 proc_callback = { path = "./src/proc_callback" }
-
-[lib]
-name = "myrpg"
+serde = "1.0.90"                          # A generic serialization/deserialization framework
+#serde_derive = "1.0.90"    # Macros 1.1 implementation of #[derive(Serialize, Deserialize)]
+serde_json = "1.0.39"                     # A JSON serialization file format

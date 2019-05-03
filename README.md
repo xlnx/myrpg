@@ -48,7 +48,7 @@ Triggers when the parsing job finishes successfully. Make a traversal over the A
 
 This function is marked as returning `Option<ValueType>`, in case some node doesn't return anything. As a result, this function has it's default behaviour: expand all child ASTs and return the last's value.
 
-Note that current AST node will be automatically destructured into childs, so the function parameters must match your production declaration, e.g:
+Note that current AST node will be automatically destructured into children, so the function parameters must match your production declaration, e.g:
 ```rust
 Expr "+" Term => |lhs, _, rhs| -> _ {
 	Some(lhs.gen().unwrap() + rhs.gen().unwrap())

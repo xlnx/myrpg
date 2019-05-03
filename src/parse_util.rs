@@ -223,7 +223,7 @@ impl<'a> std::fmt::Debug for ParsingError<'a> {
 }
 
 impl<'a> ParsingError<'a> {
-	fn as_string(&self) -> String {
+	pub fn as_string(&self) -> String {
 		let mut res = String::new();
 		if let Some(pos) = self.chunk.line.find(|c: char| c == '\n') {
 			res += &self.chunk.line[..pos];
