@@ -45,7 +45,7 @@ impl<T> Rule<T> {
             }),
         };
         for literal in symbol_literals.iter() {
-            let symbol = Symbol::from(literal).as_terminal();
+            let symbol = Symbol::from(*literal).as_terminal();
             if terminals.contains(&symbol) {
                 rule.symbols.push(symbol.as_terminal());
             } else {

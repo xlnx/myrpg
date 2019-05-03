@@ -1,14 +1,13 @@
 use std::collections::{BTreeSet, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::io::Write;
 
 use pretty::{Doc, *};
 
-use super::ast::{Ast, Token};
-use super::rule::{Grammar, Rule};
-use super::symbol::Symbol;
-use super::util::{AsString, ToDoc};
-use colored::Colorize;
+use crate::ast::{Ast, Token};
+use crate::log::{Item as LogItem, Severity, SourceFileLocation};
+use crate::rule::{Grammar, Rule};
+use crate::symbol::Symbol;
+use crate::util::{AsString, ToDoc};
 
 pub struct Item<'a, T> {
     pub rule: &'a Rule<T>,
@@ -202,8 +201,8 @@ pub struct TextChunk<'a> {
     pub line: &'a str,
 }
 
-impl<'a> TextChunk<'a> {
-    pub fn from(text: &'a str) -> Self {
+impl<'a> std::convert::From<&'a str> for TextChunk<'a> {
+    fn from(text: &'a str) -> Self {
         TextChunk {
             pos: (0, 0),
             text,
@@ -217,115 +216,30 @@ pub struct ParsingError<'a> {
     token: Option<Token<'a>>,
 }
 
-impl<'a> std::fmt::Debug for ParsingError<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.as_string())
-    }
-}
-
-fn replace_tab(text: &str, anchors: &mut [usize]) -> String {
-    const TAB_SIZE: usize = 2;
-
-    let mut res = String::with_capacity(128);
-    let mut anchor_idx: usize = 0;
-    let mut dx: usize = 0;
-    for (idx, ch) in text.chars().enumerate() {
-        if ch == '\t' {
-            for _j in 0..TAB_SIZE {
-                res.push(' ');
-            }
-            while anchor_idx < anchors.len() && anchors[anchor_idx] <= idx {
-                anchors[anchor_idx] += dx;
-                anchor_idx += 1;
-            }
-            dx += TAB_SIZE - 1;
-        } else {
-            res.push(ch);
-        }
-    }
-    while anchor_idx < anchors.len() {
-        anchors[anchor_idx] += dx;
-        anchor_idx += 1;
-    }
-    res
-}
-
-impl<'a> ParsingError<'a> {
-    pub fn as_string(&self) -> String {
-        let mut res = Vec::new();
-        let line = String::from(
-            if let Some(pos) = self.chunk.line.find(|c: char| c == '\n') {
-                &self.chunk.line[..pos]
-            } else {
-                self.chunk.line
+impl<'a> std::convert::From<ParsingError<'a>> for LogItem<'a> {
+    fn from(item: ParsingError<'a>) -> Self {
+        LogItem {
+            level: Severity::Error,
+            location: SourceFileLocation {
+                name: "<@unknown-source-file>".into(),
+                line: item.chunk.line,
+                from: if let Some(ref token) = item.token {
+                    (token.pos.0 as usize, token.pos.1 as usize)
+                } else {
+                    (item.chunk.pos.0 as usize, item.chunk.pos.1 as usize)
+                },
+                len: if let Some(ref token) = item.token {
+                    item.chunk.pos.1 - token.pos.1
+                } else {
+                    1
+                } as usize,
             },
-        );
-        let trimmed = line.trim_end();
-
-        let (begin, end, msg) = if let Some(Token { val, pos, .. }) = self.token {
-            (
-                pos.1 as usize,
-                self.token.as_ref().unwrap().val.len() + pos.1 as usize,
-                format!("{}: Unexpected Token: {:?}", "error".red(), val),
-            )
-        } else {
-            (
-                trimmed.len(),
-                trimmed.len() + 1,
-                format!("{}: Unexpected EOF", "error".red()),
-            )
-        };
-
-        let mut pos = [begin, end];
-        let trimmed = replace_tab(trimmed, &mut pos);
-        let [begin, end] = pos;
-
-        writeln!(res, "{}", msg.bold()).unwrap();
-
-        let anchor_num = format!("{} |", self.chunk.pos.0 + 1);
-        let anchor = format!("{:width$} |", "", width = anchor_num.len() - 2);
-
-        writeln!(
-            res,
-            "{:>width$} {}:{}:{}",
-            "-->".blue().bold(),
-            "file",
-            self.chunk.pos.0 + 1,
-            self.chunk.pos.1 + 1,
-            width = anchor_num.len() + 1
-        );
-
-        writeln!(res, "{}", anchor.blue().bold());
-
-        write!(
-            res,
-            "{}{}",
-            anchor_num.blue().bold(),
-            &trimmed.as_str()[..begin]
-        )
-        .unwrap();
-        write!(res, "{}", &trimmed.as_str()[begin..end].red()).unwrap();
-        writeln!(res, "{}", &trimmed.as_str()[end..]).unwrap();
-
-        write!(
-            res,
-            "{}{}",
-            anchor.blue().bold(),
-            std::iter::repeat(' ').take(begin).collect::<String>()
-        )
-        .unwrap();
-        writeln!(
-            res,
-            "{}",
-            std::iter::repeat('^')
-                .take(end - begin)
-                .collect::<String>()
-                .red()
-                .bold()
-        )
-        .unwrap();
-
-        String::from_utf8(res).unwrap()
+            message: if let Some(ref token) = item.token {
+                format!("unexpected token: {:?}", token.val)
+            } else {
+                format!("unexpected eof")
+            }
+        }
     }
 }
 
@@ -337,8 +251,8 @@ pub struct ParseEnv<'a, T> {
     pub ast_stack: VecDeque<Ast<'a, T>>,
 }
 
-impl<'a, T> ParseEnv<'a, T> {
-    pub fn from(text: &'a str) -> Self {
+impl<'a, T> std::convert::From<&'a str> for ParseEnv<'a, T> {
+    fn from(text: &'a str) -> Self {
         ParseEnv {
             chunk: TextChunk::from(text),
             token: None,
@@ -347,6 +261,9 @@ impl<'a, T> ParseEnv<'a, T> {
             ast_stack: VecDeque::new(),
         }
     }
+}
+
+impl<'a, T> ParseEnv<'a, T> {
     pub fn report_error(&self) -> ParsingError<'a> {
         ParsingError {
             chunk: self.chunk.clone(),

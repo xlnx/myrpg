@@ -8,6 +8,7 @@ enum State {
     Ast,
     Child,
     Token,
+    Pos
 }
 
 pub struct AstFormatter<'a> {
@@ -45,6 +46,12 @@ impl<'a> AstFormatter<'a> {
             (State::Token, true, false) => {
                 self.state = State::Child;
             }
+            (State::Token, true, true) => {
+                self.state = State::Pos;
+            }
+            (State::Pos, true, false) => {
+                self.state = State::Token;
+            }
             _ => panic!(),
         }
         if is_enter {
@@ -64,6 +71,7 @@ impl<'a> Formatter for AstFormatter<'a> {
         match self.reduce(true, true) {
             State::Child => self.pretty.begin_array(writer),
             State::Token => self.compact.begin_array(writer),
+            State::Pos => self.compact.begin_array(writer),
             _ => panic!(),
         }
     }
@@ -76,6 +84,7 @@ impl<'a> Formatter for AstFormatter<'a> {
         match self.reduce(true, false) {
             State::Child => self.pretty.end_array(writer),
             State::Token => self.compact.end_array(writer),
+            State::Pos => self.compact.end_array(writer),
             _ => panic!(),
         }
     }
@@ -88,6 +97,7 @@ impl<'a> Formatter for AstFormatter<'a> {
         match self.state {
             State::Child => self.pretty.begin_array_value(writer, first),
             State::Token => self.compact.begin_array_value(writer, first),
+            State::Pos => self.compact.begin_array_value(writer, first),
             _ => panic!(),
         }
     }
@@ -100,6 +110,7 @@ impl<'a> Formatter for AstFormatter<'a> {
         match self.state {
             State::Child => self.pretty.end_array_value(writer),
             State::Token => self.compact.end_array_value(writer),
+            State::Pos => self.compact.end_array_value(writer),
             _ => panic!(),
         }
     }

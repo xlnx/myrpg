@@ -30,11 +30,14 @@ impl Symbol {
     pub fn is_non_terminal(&self) -> bool {
         self.0 < 0
     }
-    pub fn from(s: &str) -> Self {
-        hash(s)
-    }
     pub fn as_str(&self) -> &'static str {
         decode(*self)
+    }
+}
+
+impl std::convert::From<&str> for Symbol {
+    fn from(s: &str) -> Self {
+        hash(s)
     }
 }
 

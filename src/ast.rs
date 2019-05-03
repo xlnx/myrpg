@@ -21,10 +21,11 @@ impl<'a> Serialize for Token<'a> {
     where
         S: Serializer,
     {
-        let mut seq = serializer.serialize_tuple(2)?;
+        let mut seq = serializer.serialize_tuple(3)?;
         {
             seq.serialize_element(&self.symbol)?;
             seq.serialize_element(&self.val)?;
+            seq.serialize_element(&self.pos)?;
         }
         seq.end()
     }

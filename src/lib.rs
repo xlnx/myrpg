@@ -32,6 +32,8 @@ use index::*;
 
 mod formatter;
 
+pub mod log;
+
 pub use proc_callback::*;
 
 fn make_first<T>(first: &mut HashMap<Symbol, HashSet<Symbol>>, grammar: &Grammar<T>) {
