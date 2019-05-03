@@ -225,11 +225,15 @@ impl<'a> std::fmt::Debug for ParsingError<'a> {
 impl<'a> ParsingError<'a> {
 	pub fn as_string(&self) -> String {
 		let mut res = String::new();
-		if let Some(pos) = self.chunk.line.find(|c: char| c == '\n') {
-			res += &self.chunk.line[..pos];
-		} else {
-			res += self.chunk.line;
-		}
+		let line = String::from(
+			if let Some(pos) = self.chunk.line.find(|c: char| c == '\n') {
+				&self.chunk.line[..pos]
+			} else {
+				self.chunk.line
+			}
+		);
+		let trimmed = line.trim_end();
+		res += trimmed;
 		res += "\n";
 		if let Some(Token { val, pos, .. }) = self.token {
 			for _i in 0..pos.1 {
@@ -242,7 +246,7 @@ impl<'a> ParsingError<'a> {
 			res += "\n";
 			res += &format!("{}:{}: Unexpected Token: {:?}", pos.0, pos.1, val)
 		} else {
-			for _i in 0..self.chunk.line.len() {
+			for _i in 0..trimmed.len() {
 				res += " ";
 			}
 			res += "^\n";

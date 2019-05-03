@@ -73,7 +73,7 @@ impl<'a, T> Ast<'a, T> {
 		let mut w = Vec::with_capacity(128);
 		let fmt = AstFormatter::new();
 		let mut ser = serde_json::Serializer::with_formatter(&mut w, fmt);
-		self.serialize(&mut ser);
+		self.serialize(&mut ser).unwrap();
 		let string = unsafe {
 			// We do not emit invalid UTF-8.
 			String::from_utf8_unchecked(w)
