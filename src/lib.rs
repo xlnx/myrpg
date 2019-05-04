@@ -33,6 +33,7 @@ use index::*;
 mod formatter;
 
 pub mod log;
+use log::{Logger, Item as LogItem};
 
 pub use proc_callback::*;
 
@@ -600,7 +601,7 @@ where
         }
     }
 
-    pub fn parse(&self, text: &'a str) -> Result<Ast<T::Output>, ParsingError<'a>> {
+    pub fn parse(&self, text: &'a str, logger: &mut Logger) -> Result<Ast<T::Output>, ()> {
         let mut env = ParseEnv::from(text);
         env.token = self.next(&mut env.chunk);
 
@@ -613,8 +614,8 @@ where
             match self.do_match(symbol, &mut env) {
                 Ok(true) => break,
                 Err(err) => {
-                    // println!("{:?}", self.closures[*env.states.back().unwrap()]);
-                    return Err(err);
+                    logger.log(&err.into());
+                    return Err(());
                 }
                 _ => {}
             }
