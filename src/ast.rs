@@ -13,7 +13,21 @@ use super::util::{AsString, ToDoc};
 pub struct Token<'a> {
     pub symbol: Symbol,
     pub val: &'a str,
-    pub pos: (u32, u32),
+    pub pos: ((usize, usize), (usize, usize)),
+}
+
+pub trait Location {
+    fn begin(&self) -> (usize, usize);
+    fn end(&self) -> (usize, usize);
+}
+
+impl<'a> Location for Token<'a> {
+    fn begin(&self) -> (usize, usize) {
+        self.pos.0
+    }
+    fn end(&self) -> (usize, usize) {
+        self.pos.1
+    }
 }
 
 impl<'a> Serialize for Token<'a> {
@@ -21,11 +35,12 @@ impl<'a> Serialize for Token<'a> {
     where
         S: Serializer,
     {
+        let ((a, b), (c, d)) = self.pos;
         let mut seq = serializer.serialize_tuple(3)?;
         {
             seq.serialize_element(&self.symbol)?;
             seq.serialize_element(&self.val)?;
-            seq.serialize_element(&self.pos)?;
+            seq.serialize_element(&(a, b, c, d))?;
         }
         seq.end()
     }
@@ -50,7 +65,17 @@ impl<'a> std::fmt::Debug for Token<'a> {
 pub struct Ast<'a, T> {
     pub symbol: Symbol,
     pub children: Vec<AstNode<'a, T>>,
+    pub pos: ((usize, usize), (usize, usize)),
     pub(crate) rule: &'a Rule<T>,
+}
+
+impl<'a, T> Location for Ast<'a, T> {
+    fn begin(&self) -> (usize, usize) {
+        self.pos.0
+    }
+    fn end(&self) -> (usize, usize) {
+        self.pos.1
+    }
 }
 
 impl<'a, T> Serialize for Ast<'a, T> {
@@ -58,9 +83,11 @@ impl<'a, T> Serialize for Ast<'a, T> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Ast", 2)?;
+        let mut state = serializer.serialize_struct("Ast", 3)?;
         {
+            let ((a, b), (c, d)) = self.pos;
             state.serialize_field("type", &self.symbol)?;
+            state.serialize_field("pos", &(a, b, c, d))?;
             state.serialize_field("children", &self.children)?;
         }
         state.end()
@@ -68,6 +95,22 @@ impl<'a, T> Serialize for Ast<'a, T> {
 }
 
 impl<'a, T> Ast<'a, T> {
+    pub fn from(symbol: Symbol, children: Vec<AstNode<'a, T>>, rule: &'a Rule<T>) -> Self {
+        let mut pos = (
+            (std::usize::MAX, std::usize::MAX),
+            (std::usize::MIN, std::usize::MIN),
+        );
+        for child in children.iter() {
+            pos.0 = pos.0.min(child.begin());
+            pos.1 = pos.0.max(child.end());
+        }
+        Ast {
+            symbol,
+            children,
+            rule,
+            pos,
+        }
+    }
     pub fn gen(&self) -> Option<T> {
         (*self.rule.handle_exec)(&self)
     }
@@ -115,6 +158,21 @@ impl<'a, T> ToDoc for Ast<'a, T> {
 pub enum AstNode<'a, T> {
     Ast(Ast<'a, T>),
     Token(Token<'a>),
+}
+
+impl<'a, T> Location for AstNode<'a, T> {
+    fn begin(&self) -> (usize, usize) {
+        match self {
+            AstNode::Ast(ast) => ast.begin(),
+            AstNode::Token(tok) => tok.begin(),
+        }
+    }
+    fn end(&self) -> (usize, usize) {
+        match self {
+            AstNode::Ast(ast) => ast.end(),
+            AstNode::Token(tok) => tok.end(),
+        }
+    }
 }
 
 impl<'a, T> Serialize for AstNode<'a, T> {

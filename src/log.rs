@@ -22,7 +22,7 @@ pub struct SourceFileLocation<'a> {
     pub name: String,
     pub line: &'a str,
     pub from: (usize, usize),
-    pub len: usize,
+    pub to: (usize, usize),
 }
 
 pub struct Item<'a> {
@@ -62,14 +62,6 @@ pub struct Logger<'a> {
     writer: &'a mut Write,
 }
 
-// impl<'a> std::convert::From<&'a mut Write> for Logger<'a> {
-//     fn from(writer: &'a mut Write) -> Self {
-//         Logger {
-//             writer
-//         }
-//     }
-// }
-
 impl<'a> Logger<'a> {
     pub fn from(writer: &'a mut Write) -> Self {
         Logger { writer }
@@ -91,18 +83,7 @@ impl<'a> Logger<'a> {
         });
         let trimmed = line.as_str(); //.trim_end();
 
-        //        let (begin, end) = if let Some(Token { val, pos, .. }) = self.token {
-        //            (
-        //                pos.1 as usize,
-        //                self.token.as_ref().unwrap().val.len() + pos.1 as usize
-        //            )
-        //        } else {
-        //            (
-        //                trimmed.len(),
-        //                trimmed.len() + 1
-        //            )
-        //        };
-        let (begin, end) = (loc.from.1, loc.from.1 + loc.len);
+        let (begin, end) = (loc.from.1, loc.from.1 + loc.to.1);
 
         let mut pos = [begin, end];
         let trimmed = replace_tab(trimmed, &mut pos);

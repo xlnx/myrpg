@@ -196,7 +196,7 @@ impl<'a, T> ToDoc for Vec<Closure<'a, T>> {
 
 #[derive(Clone)]
 pub struct TextChunk<'a> {
-    pub pos: (u32, u32),
+    pub pos: (usize, usize),
     pub text: &'a str,
     pub line: &'a str,
 }
@@ -224,21 +224,21 @@ impl<'a> std::convert::From<ParsingError<'a>> for LogItem<'a> {
                 name: "<@unknown-source-file>".into(),
                 line: item.chunk.line,
                 from: if let Some(ref token) = item.token {
-                    (token.pos.0 as usize, token.pos.1 as usize)
+                    token.pos.0
                 } else {
-                    (item.chunk.pos.0 as usize, item.chunk.pos.1 as usize)
+                    item.chunk.pos
                 },
-                len: if let Some(ref token) = item.token {
-                    item.chunk.pos.1 - token.pos.1
+                to: if let Some(ref token) = item.token {
+                    token.pos.1
                 } else {
-                    1
-                } as usize,
+                    (item.chunk.pos.0, item.chunk.pos.1 + 1)
+                },
             },
             message: if let Some(ref token) = item.token {
                 format!("unexpected token: {:?}", token.val)
             } else {
                 format!("unexpected eof")
-            }
+            },
         }
     }
 }

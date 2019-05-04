@@ -462,7 +462,7 @@ where
         // println!("{:?}", self.lex_rules);
         // println!("{:?}", self.lex_rules_set);
         // self.lex_rules_set.ma
-        for (val, rule, cb) in self.lex_rules.iter() {
+        for (symbol, rule, cb) in self.lex_rules.iter() {
             if let Some(caps) = rule.captures(chunk.text) {
                 let m = caps.get(1).unwrap();
                 let (s, t) = (m.start(), m.end());
@@ -472,23 +472,25 @@ where
                     beg += pos + 1;
                     chunk.line = &chunk.text[beg..];
                 }
-                chunk.pos.1 += (s - beg) as u32;
-                // .find('\n');
-                let mut tok = Token {
-                    symbol: *val,
-                    val: &chunk.text[s..t],
-                    pos: chunk.pos,
-                };
-                // println!("yield ====> {:?}", tok);
+                chunk.pos.1 += s - beg;
+
+                let token_val = &chunk.text[s..t];
+                let tok_begin = chunk.pos;
+
                 beg = s;
                 while let Some(pos) = chunk.text[s..t].find(|c: char| c == '\n') {
                     chunk.pos = (chunk.pos.0 + 1, 0);
                     beg += pos + 1;
                     chunk.line = &chunk.text[beg..];
                 }
-                chunk.pos.1 += (t - beg) as u32;
+                chunk.pos.1 += t - beg;
                 chunk.text = &chunk.text[t..];
-                // println!("{:?}", tok);
+                let mut tok = Token {
+                    symbol: *symbol,
+                    val: token_val,
+                    pos: (tok_begin, chunk.pos),
+                };
+                // println!("yield ====> {:?}", tok);
                 if let Some(cb) = cb {
                     (*cb)(&mut tok);
                 }
@@ -529,11 +531,7 @@ where
             }
         }
 
-        let mut ast = Ast {
-            symbol: rule.src,
-            children,
-            rule,
-        };
+        let mut ast = Ast::from(rule.src, children, rule);
         if let Some(ref handle_reduce) = rule.handle_reduce {
             (*handle_reduce)(&mut ast);
         }

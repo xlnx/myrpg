@@ -8,7 +8,7 @@ enum State {
     Ast,
     Child,
     Token,
-    Pos
+    Pos,
 }
 
 pub struct AstFormatter<'a> {
