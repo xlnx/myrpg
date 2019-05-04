@@ -13,7 +13,7 @@ macro_rules! lang {
 		@
 		$(
 			$a: ident => [
-				$( $($b: pat)* $(=> $(@ $attr: ident)* $cb: expr)*),*
+				$( $($b: pat)* $(|$(@$j: ident),*|)? $(=> $(@ $attr: ident)* $cb: expr)*),*
 			]
 		),*
 	) => {{
@@ -21,7 +21,8 @@ macro_rules! lang {
 				&'a str,
 				Vec<(
 					Vec<&'a str>,
-					EventsType
+					EventsType,
+					Vec<&'a str>
 				)>
 			)> = vec![];
 
@@ -29,7 +30,7 @@ macro_rules! lang {
 			lng.push((
 				stringify!($a),
 				lang!(@expand_param $res ;; $tuple @
-					$( $($b)* $(=> $(@ $attr)* $cb)*),*
+					$( $($b)* $(|$(@$j),*|)? $(=> $(@ $attr)* $cb)*),*
 				)
 			));
 		})*
@@ -39,7 +40,8 @@ macro_rules! lang {
 			"@",
 			vec![(
 				vec![s],
-				(None, None)
+				(None, None),
+				vec!["flatten"]
 			)]
 		));
 
@@ -50,16 +52,20 @@ macro_rules! lang {
 		;;
 		$tuple: tt
 		@
-		$( $($b: pat)* $(=> $(@ $attr: ident)* $cb: expr)*),*
+		$( $($b: pat)* $(|$(@$j: ident),*|)? $(=> $(@ $attr: ident)* $cb: expr)*),*
 	) => { {
 		let mut rules: Vec<(
 				Vec<&'a str>,
-				EventsType
+				EventsType,
+				Vec<&'a str>
 			)> = vec![];
 		$({
 			let ss: Vec<_> = vec![$(
 				stringify!($b),
 			)*].into_iter().filter(|x| x != &"_").collect();
+			let js: Vec<_> = vec![$(
+				$(stringify!($j))*
+			)?];
 
 			let evt: EventsType =
 			if lang!(@any_expr $($cb)*) {
@@ -75,7 +81,7 @@ macro_rules! lang {
 			} else {
 				(None, None)
 			};
-			rules.push((ss, evt));
+			rules.push((ss, evt, js));
 		})*
 		rules
 	} };
@@ -102,7 +108,7 @@ macro_rules! lang {
 		;;
 		$(
 			$a: ident => [
-				$( $($b: pat)* $(=> $(@ $attr: ident)* $cb: expr)*),* $(,)?
+				$( $($b: pat)* $(|$(@$j: ident),*|)? $(=> $(@ $attr: ident)* $cb: expr)*),* $(,)?
 			]
 		),* $(,)?
 	) => {
@@ -119,7 +125,8 @@ macro_rules! lang {
 						(
 							Option<Box<Fn(&Ast<$res>) -> Option<$res>>>,
 							Option<Box<Fn(&mut Ast<$res>) -> ()>>,
-						)
+						),
+						Vec<&'a str>
 					)>
 				)>
 			) {
@@ -140,7 +147,7 @@ macro_rules! lang {
 				let lng = lang!(@expand_grammar $res ;; ($($l)*) @
 					$(
 						$a => [
-							$( $($b)* $(=> $(@ $attr)* $cb)*),*
+							$( $($b)* $(|$(@$j),*|)? $(=> $(@ $attr)* $cb)*),*
 						]
 					),*
 				);

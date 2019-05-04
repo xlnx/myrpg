@@ -1,6 +1,6 @@
 use pretty::{Doc, *};
 use serde::{
-    ser::{SerializeStruct, SerializeTuple},
+    ser::{SerializeSeq, SerializeStruct, SerializeTuple},
     Serialize, Serializer,
 };
 
@@ -8,6 +8,7 @@ use super::formatter::AstFormatter;
 use super::rule::Rule;
 use super::symbol::Symbol;
 use super::util::{AsString, ToDoc};
+use serde_json::ser::PrettyFormatter;
 
 #[derive(Clone)]
 pub struct Token<'a> {
@@ -78,19 +79,60 @@ impl<'a, T> Location for Ast<'a, T> {
     }
 }
 
+fn serialize_flatten<'a, S, T>(children: &Vec<AstNode<'a, T>>, seq: &mut S::SerializeSeq)
+where
+    S: Serializer
+{
+    for child in children.iter() {
+        if let AstNode::Ast(ast) = child {
+            if ast.rule.attributes.contains("flatten") {
+                serialize_flatten::<S, T>(&ast.children, seq);
+            } else {
+                seq.serialize_element(&child).unwrap();
+            }
+        } else {
+            seq.serialize_element(&child).unwrap();
+        }
+    }
+}
+
+struct SerializeChildren<'a, 'b, T> (&'a Vec<AstNode<'b, T>>);
+
+impl<'a, 'b, T> Serialize for SerializeChildren<'a, 'b, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(None)?;
+        serialize_flatten::<S, T>(&self.0, &mut seq);
+        seq.end()
+    }
+}
+
 impl<'a, T> Serialize for Ast<'a, T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
+//        if self.rule.attributes.contains("flatten") {
+//            serializer.serialize_some(&SerializeChildren(&self.children))
+//        } else {
         let mut state = serializer.serialize_struct("Ast", 3)?;
         {
             let ((a, b), (c, d)) = self.pos;
             state.serialize_field("type", &self.symbol)?;
             state.serialize_field("pos", &(a, b, c, d))?;
-            state.serialize_field("children", &self.children)?;
+//                    let children: Vec<_> = self
+//                        .children
+//                        .iter()
+//                        .filter(|x| x.is_ast_deflate())
+//                        .collect();
+//                serialize_flatten::<S, T>()
+//                let children = &self.children;
+            state.serialize_field("children", &SerializeChildren(&self.children));
         }
         state.end()
+//        }
     }
 }
 
@@ -120,6 +162,7 @@ impl<'a, T> Ast<'a, T> {
     pub fn to_json_pretty(&self) -> String {
         let mut w = Vec::with_capacity(128);
         let fmt = AstFormatter::new();
+//        let fmt = PrettyFormatter::new();
         let mut ser = serde_json::Serializer::with_formatter(&mut w, fmt);
         self.serialize(&mut ser).unwrap();
         let string = unsafe {
@@ -158,6 +201,23 @@ impl<'a, T> ToDoc for Ast<'a, T> {
 pub enum AstNode<'a, T> {
     Ast(Ast<'a, T>),
     Token(Token<'a>),
+}
+
+impl<'a, T> AstNode<'a, T> {
+    pub fn is_ast(&self) -> bool {
+        if let AstNode::Ast(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+    pub fn is_token(&self) -> bool {
+        if let AstNode::Token(_) = self {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl<'a, T> Location for AstNode<'a, T> {

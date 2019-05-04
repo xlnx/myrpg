@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use colored::Colorize;
+use colored::{ColoredString, Colorize};
 
 #[derive(Copy, Clone)]
 pub enum Severity {
@@ -15,7 +15,15 @@ impl Severity {
             Severity::Warning => "warning",
         }
     }
-    fn apply(&self) {}
+    fn apply<T>(&self, text: T) -> ColoredString
+    where
+        T: Colorize,
+    {
+        match self {
+            Severity::Error => text.red(),
+            Severity::Warning => text.yellow(),
+        }
+    }
 }
 
 pub struct SourceFileLocation<'a> {
@@ -29,6 +37,16 @@ pub struct Item<'a> {
     pub level: Severity,
     pub location: SourceFileLocation<'a>,
     pub message: String,
+}
+
+impl<'a> Item<'a> {
+    pub fn is_error(&self) -> bool {
+        if let Severity::Error = self.level {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 fn replace_tab(text: &str, anchors: &mut [usize]) -> String {
@@ -83,13 +101,13 @@ impl<'a> Logger<'a> {
         });
         let trimmed = line.as_str(); //.trim_end();
 
-        let (begin, end) = (loc.from.1, loc.from.1 + loc.to.1);
+        let (begin, end) = (loc.from.1, loc.to.1);
 
         let mut pos = [begin, end];
         let trimmed = replace_tab(trimmed, &mut pos);
         let [begin, end] = pos;
 
-        let message = format!("{}: {}", level.as_str().red(), message);
+        let message = format!("{}: {}", level.apply(level.as_str()), message);
 
         writeln!(self.writer, "{}", message.bold()).unwrap();
 
@@ -116,7 +134,12 @@ impl<'a> Logger<'a> {
             &trimmed.as_str()[..begin]
         )
         .unwrap();
-        write!(self.writer, "{}", &trimmed.as_str()[begin..end].red()).unwrap();
+        write!(
+            self.writer,
+            "{}",
+            level.apply(&trimmed.as_str()[begin..end])
+        )
+        .unwrap();
         writeln!(self.writer, "{}", &trimmed.as_str()[end..]).unwrap();
 
         write!(
@@ -129,10 +152,13 @@ impl<'a> Logger<'a> {
         writeln!(
             self.writer,
             "{}",
-            std::iter::repeat('^')
-                .take(end - begin)
-                .collect::<String>()
-                .red()
+            level
+                .apply(
+                    std::iter::repeat('^')
+                        .take(end - begin)
+                        .collect::<String>()
+                        .as_str()
+                )
                 .bold()
         )
         .unwrap();

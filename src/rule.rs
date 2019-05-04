@@ -10,6 +10,7 @@ pub struct Rule<T> {
     pub ast_cnt: u16,
     pub term_cnt: u16,
     pub symbols: Vec<Symbol>,
+    pub attributes: HashSet<String>,
 
     pub handle_reduce: Option<Box<Fn(&mut Ast<T>) -> ()>>,
     pub handle_exec: Box<Fn(&Ast<T>) -> Option<T>>,
@@ -32,6 +33,7 @@ impl<T> Rule<T> {
             ast_cnt: 0,
             term_cnt: 0,
             symbols: vec![],
+            attributes: HashSet::new(),
 
             handle_reduce: None,
             handle_exec: Box::new(|ast: &Ast<T>| -> Option<T> {

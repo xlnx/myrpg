@@ -6,6 +6,8 @@ use serde_json::ser::{CompactFormatter, Formatter, PrettyFormatter};
 enum State {
     None,
     Ast,
+    AstPos,
+    AfterAstPos,
     Child,
     Token,
     Pos,
@@ -28,10 +30,22 @@ impl<'a> AstFormatter<'a> {
     fn reduce(&mut self, is_array: bool, is_enter: bool) -> State {
         let old_state = self.state;
         match (self.state, is_array, is_enter) {
-            (State::None, _, _) => {
+            (State::None, false, _) => {
                 self.state = State::Ast;
             }
-            (State::Ast, _, _) => {
+            (State::None, true, _) => {
+                self.state = State::Child;
+            }
+            (State::Ast, _, true) => {
+                self.state = State::AstPos;
+            }
+            (State::Ast, _, false) => {
+                self.state = State::Child;
+            }
+            (State::AstPos, _, _) => {
+                self.state = State::AfterAstPos;
+            }
+            (State::AfterAstPos, _, _) => {
                 self.state = State::Child;
             }
             (State::Child, true, true) => {
@@ -71,7 +85,7 @@ impl<'a> Formatter for AstFormatter<'a> {
         match self.reduce(true, true) {
             State::Child => self.pretty.begin_array(writer),
             State::Token => self.compact.begin_array(writer),
-            State::Pos => self.compact.begin_array(writer),
+            State::Pos | State::AstPos => self.compact.begin_array(writer),
             _ => panic!(),
         }
     }
@@ -84,7 +98,7 @@ impl<'a> Formatter for AstFormatter<'a> {
         match self.reduce(true, false) {
             State::Child => self.pretty.end_array(writer),
             State::Token => self.compact.end_array(writer),
-            State::Pos => self.compact.end_array(writer),
+            State::Pos | State::AstPos => self.compact.end_array(writer),
             _ => panic!(),
         }
     }
@@ -97,7 +111,7 @@ impl<'a> Formatter for AstFormatter<'a> {
         match self.state {
             State::Child => self.pretty.begin_array_value(writer, first),
             State::Token => self.compact.begin_array_value(writer, first),
-            State::Pos => self.compact.begin_array_value(writer, first),
+            State::Pos | State::AstPos => self.compact.begin_array_value(writer, first),
             _ => panic!(),
         }
     }
@@ -110,7 +124,7 @@ impl<'a> Formatter for AstFormatter<'a> {
         match self.state {
             State::Child => self.pretty.end_array_value(writer),
             State::Token => self.compact.end_array_value(writer),
-            State::Pos => self.compact.end_array_value(writer),
+            State::Pos | State::AstPos => self.compact.end_array_value(writer),
             _ => panic!(),
         }
     }

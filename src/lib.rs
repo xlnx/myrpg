@@ -232,6 +232,7 @@ pub trait LRLang {
                     Option<Box<Fn(&Ast<Self::Output>) -> Option<Self::Output>>>,
                     Option<Box<Fn(&mut Ast<Self::Output>) -> ()>>,
                 ),
+                Vec<&'a str>
             )>,
         )>,
     );
@@ -301,7 +302,7 @@ where
         for (lang_item, lang_rules) in lang.into_iter() {
             let src = Symbol::from(lang_item).as_non_terminal();
             let mut rules = vec![];
-            for (lang_patts, lang_evt) in lang_rules.into_iter() {
+            for (lang_patts, lang_evt, lang_json_attr) in lang_rules.into_iter() {
                 let ss = lang_patts;
                 let rule = {
                     let mut rule = Rule::from(rule_id, src, &ss, &terms_set);
@@ -310,6 +311,9 @@ where
                     }
                     if let Some(handle_reduce) = lang_evt.1 {
                         rule.handle_reduce = Some(handle_reduce);
+                    }
+                    for attr in lang_json_attr.iter() {
+                        rule.attributes.insert(String::from(*attr));
                     }
                     rule
                 };
@@ -490,7 +494,6 @@ where
                     val: token_val,
                     pos: (tok_begin, chunk.pos),
                 };
-                // println!("yield ====> {:?}", tok);
                 if let Some(cb) = cb {
                     (*cb)(&mut tok);
                 }
