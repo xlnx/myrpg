@@ -112,7 +112,7 @@ macro_rules! lang {
 			]
 		),* $(,)?
 	) => {
-		struct $name {}
+		pub struct $name {}
 		impl $crate::LRLang for $name {
 			type Output = $res;
 

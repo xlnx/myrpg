@@ -220,7 +220,7 @@ impl<'a> std::convert::From<ParsingError<'a>> for LogItem<'a> {
     fn from(item: ParsingError<'a>) -> Self {
         LogItem {
             level: Severity::Error,
-            location: SourceFileLocation {
+            location: Some(SourceFileLocation {
                 name: "<@unknown-source-file>".into(),
                 line: item.chunk.line,
                 from: if let Some(ref token) = item.token {
@@ -233,7 +233,7 @@ impl<'a> std::convert::From<ParsingError<'a>> for LogItem<'a> {
                 } else {
                     (item.chunk.pos.0, item.chunk.pos.1 + 1)
                 },
-            },
+            }),
             message: if let Some(ref token) = item.token {
                 format!("unexpected token: {:?}", token.val)
             } else {

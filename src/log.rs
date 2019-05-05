@@ -35,7 +35,7 @@ pub struct SourceFileLocation<'a> {
 
 pub struct Item<'a> {
     pub level: Severity,
-    pub location: SourceFileLocation<'a>,
+    pub location: Option<SourceFileLocation<'a>>,
     pub message: String,
 }
 
@@ -93,75 +93,77 @@ impl<'a> Logger<'a> {
             location: loc,
             message,
         } = item;
-
-        let line = String::from(if let Some(pos) = loc.line.find(|c: char| c == '\n') {
-            &loc.line[..pos]
-        } else {
-            loc.line
-        });
-        let trimmed = line.as_str(); //.trim_end();
-
-        let (begin, end) = (loc.from.1, loc.to.1);
-
-        let mut pos = [begin, end];
-        let trimmed = replace_tab(trimmed, &mut pos);
-        let [begin, end] = pos;
-
+        
         let message = format!("{}: {}", level.apply(level.as_str()), message);
 
         writeln!(self.writer, "{}", message.bold()).unwrap();
 
-        let anchor_num = format!("{} | ", loc.from.0 + 1);
-        let anchor = format!("{:width$} | ", "", width = anchor_num.len() - 3);
+        if let Some(loc) = loc {
+            let line = String::from(if let Some(pos) = loc.line.find(|c: char| c == '\n') {
+                &loc.line[..pos]
+            } else {
+                loc.line
+            });
+            let trimmed = line.as_str(); //.trim_end();
 
-        writeln!(
-            self.writer,
-            "{:>width$} {}:{}:{}",
-            "-->".blue().bold(),
-            loc.name,
-            loc.from.0 + 1,
-            loc.from.1 + 1,
-            width = anchor_num.len()
-        )
-        .unwrap();
+            let (begin, end) = (loc.from.1, loc.to.1);
 
-        writeln!(self.writer, "{}", anchor.blue().bold()).unwrap();
+            let mut pos = [begin, end];
+            let trimmed = replace_tab(trimmed, &mut pos);
+            let [begin, end] = pos;
 
-        write!(
-            self.writer,
-            "{}{}",
-            anchor_num.blue().bold(),
-            &trimmed.as_str()[..begin]
-        )
-        .unwrap();
-        write!(
-            self.writer,
-            "{}",
-            level.apply(&trimmed.as_str()[begin..end])
-        )
-        .unwrap();
-        writeln!(self.writer, "{}", &trimmed.as_str()[end..]).unwrap();
+            let anchor_num = format!("{} | ", loc.from.0 + 1);
+            let anchor = format!("{:width$} | ", "", width = anchor_num.len() - 3);
 
-        write!(
-            self.writer,
-            "{}{}",
-            anchor.blue().bold(),
-            std::iter::repeat(' ').take(begin).collect::<String>()
-        )
-        .unwrap();
-        writeln!(
-            self.writer,
-            "{}",
-            level
-                .apply(
-                    std::iter::repeat('^')
-                        .take(end - begin)
-                        .collect::<String>()
-                        .as_str()
-                )
-                .bold()
-        )
-        .unwrap();
+            writeln!(
+                self.writer,
+                "{:>width$} {}:{}:{}",
+                "-->".blue().bold(),
+                loc.name,
+                loc.from.0 + 1,
+                loc.from.1 + 1,
+                width = anchor_num.len()
+            )
+            .unwrap();
+
+            writeln!(self.writer, "{}", anchor.blue().bold()).unwrap();
+
+            write!(
+                self.writer,
+                "{}{}",
+                anchor_num.blue().bold(),
+                &trimmed.as_str()[..begin]
+            )
+            .unwrap();
+            write!(
+                self.writer,
+                "{}",
+                level.apply(&trimmed.as_str()[begin..end])
+            )
+            .unwrap();
+            writeln!(self.writer, "{}", &trimmed.as_str()[end..]).unwrap();
+
+            write!(
+                self.writer,
+                "{}{}",
+                anchor.blue().bold(),
+                std::iter::repeat(' ').take(begin).collect::<String>()
+            )
+            .unwrap();
+            writeln!(
+                self.writer,
+                "{}",
+                level
+                    .apply(
+                        std::iter::repeat('^')
+                            .take(end - begin)
+                            .collect::<String>()
+                            .as_str()
+                    )
+                    .bold()
+            )
+            .unwrap();
+        }
 
         writeln!(self.writer).unwrap();
     }

@@ -114,25 +114,18 @@ impl<'a, T> Serialize for Ast<'a, T> {
     where
         S: Serializer,
     {
-//        if self.rule.attributes.contains("flatten") {
-//            serializer.serialize_some(&SerializeChildren(&self.children))
-//        } else {
-        let mut state = serializer.serialize_struct("Ast", 3)?;
-        {
-            let ((a, b), (c, d)) = self.pos;
-            state.serialize_field("type", &self.symbol)?;
-            state.serialize_field("pos", &(a, b, c, d))?;
-//                    let children: Vec<_> = self
-//                        .children
-//                        .iter()
-//                        .filter(|x| x.is_ast_deflate())
-//                        .collect();
-//                serialize_flatten::<S, T>()
-//                let children = &self.children;
-            state.serialize_field("children", &SerializeChildren(&self.children));
-        }
-        state.end()
-//        }
+       if self.rule.attributes.contains("flatten") {
+           serializer.serialize_some(&SerializeChildren(&self.children))
+       } else {
+            let mut state = serializer.serialize_struct("Ast", 3)?;
+            {
+                let ((a, b), (c, d)) = self.pos;
+                state.serialize_field("type", &self.symbol)?;
+                state.serialize_field("pos", &(a, b, c, d))?;
+                state.serialize_field("children", &SerializeChildren(&self.children))?;
+            }
+            state.end()
+       }
     }
 }
 
