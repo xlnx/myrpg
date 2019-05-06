@@ -224,7 +224,7 @@ pub trait LRLang {
     type Output;
 
     fn new<'a>() -> (
-        Vec<(&'a str, &'a str, Option<Box<Fn(&mut Token) -> bool>>)>,
+        Vec<(&'a str, &'a str, Option<Box<Fn(Token) -> Option<Token>>>)>,
         Vec<(
             &'a str,
             Vec<(
@@ -241,7 +241,7 @@ pub trait LRLang {
 
 #[allow(dead_code)]
 pub struct LRParser<'a, T: LRLang> {
-    lex_rules: Vec<(Symbol, Regex, Option<Box<Fn(&mut Token) -> bool>>)>,
+    lex_rules: Vec<(Symbol, Regex, Option<Box<Fn(Token) -> Option<Token>>>)>,
     lex_rules_set: RegexSet,
 
     closures: Vec<Closure<'a, T::Output>>,
@@ -492,20 +492,20 @@ where
                     }
                     chunk.pos.1 += t - beg;
                     chunk.text = &chunk.text[t..];
-                    let mut tok = Token {
+                    let tok = Token {
                         symbol: *symbol,
                         val: token_val,
                         pos: (tok_begin, chunk.pos),
                     };
                     found = true;
-                    if if let Some(cb) = cb {
-                        (*cb)(&mut tok)
+                    if let Some(cb) = cb {
+                        if let Some(new_tok) = (*cb)(tok) {
+                            return Some(new_tok);
+                        } else {
+                            break;
+                        }
                     } else {
-                        true
-                    } {
                         return Some(tok);
-                    } else {
-                        break;
                     }
                 }
             }
