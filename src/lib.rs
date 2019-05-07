@@ -325,6 +325,15 @@ where
             &*(&grammar as *const Grammar<T::Output>)
         });
 
+        // println!(
+        //     "{}",
+        //     closures
+        //         // .iter()
+        //         // .map(|x| x.expanded(&first))
+        //         // .collect::<Vec<_>>()
+        //         .as_string()
+        // );
+
         loop {
             let mut add_la = false;
 
@@ -422,7 +431,7 @@ where
 									"Conflict action found when receiving {:?}:\n#0: {}\n#1: Reducing {:?}\nCan't build parse table",
 									symbol,
 									prev,
-									item.rule
+									item
 								));
                             }
                         } else {

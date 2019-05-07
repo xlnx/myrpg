@@ -121,10 +121,11 @@ impl<'a, T> Closure<'a, T> {
         Closure(BTreeSet::new(), grammar)
     }
     fn expand(&mut self, item: &Item<'a, T>, first: &HashMap<Symbol, HashSet<Symbol>>) -> bool {
-        // println!("{:?}", item);
         let la = if let Some(old_item) = self.0.get(&item) {
+            // println!("{:?}", item);
+            // println!("{:?}", );
             // la has no item.
-            if item.gt_some_what(&old_item) {
+            if !item.gt_some_what(&old_item) {
                 return false;
             }
             self.0
