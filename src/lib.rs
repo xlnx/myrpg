@@ -33,7 +33,7 @@ use index::*;
 mod formatter;
 
 pub mod log;
-use log::{Logger, Item as LogItem};
+use log::{Item as LogItem, Logger};
 
 pub use proc_callback::*;
 
@@ -224,7 +224,12 @@ pub trait LRLang {
     type Output;
 
     fn new<'a>() -> (
-        Vec<(&'a str, &'a str, Option<Box<Fn(&mut Token) -> ()>>)>,
+
+        Vec<(
+            &'a str,
+            &'a str,
+            Option<Box<Fn(&mut Token, &mut TokenCtrl) -> ()>>,
+        )>,
         Vec<(
             &'a str,
             Vec<(
@@ -233,7 +238,7 @@ pub trait LRLang {
                     Option<Box<Fn(&Ast<Self::Output>) -> Option<Self::Output>>>,
                     Option<Box<Fn(&mut Ast<Self::Output>) -> ()>>,
                 ),
-                Vec<&'a str>
+                Vec<&'a str>,
             )>,
         )>,
     );
@@ -241,7 +246,11 @@ pub trait LRLang {
 
 #[allow(dead_code)]
 pub struct LRParser<'a, T: LRLang> {
-    lex_rules: Vec<(Symbol, Regex, Option<Box<Fn(&mut Token) -> ()>>)>,
+    lex_rules: Vec<(
+        Symbol,
+        Regex,
+        Option<Box<Fn(&mut Token, &mut TokenCtrl) -> ()>>,
+    )>,
     lex_rules_set: RegexSet,
 
     closures: Vec<Closure<'a, T::Output>>,
@@ -249,6 +258,27 @@ pub struct LRParser<'a, T: LRLang> {
     symbols: Vec<Symbol>,
     action: Vec<HashMap<Symbol, Action<'a, T::Output>>>,
     phantom: PhantomData<T>,
+}
+
+pub struct TokenCtrl {
+    discard_token: bool,
+    new_source: Option<String>,
+    new_location: Option<(usize, usize)>,
+}
+
+impl TokenCtrl {
+    pub fn discard(&mut self) -> &mut Self {
+        self.discard_token = true;
+        self
+    }
+    pub fn set_source_file(&mut self, src: &str) -> &mut Self {
+        self.new_source = Some(String::from(src));
+        self
+    }
+    pub fn set_location(&mut self, loc: (usize, usize)) -> &mut Self {
+        self.new_location = Some(loc);
+        self
+    }
 }
 
 impl<'a, T> LRParser<'a, T>
@@ -287,7 +317,7 @@ where
         for (lex_name, lex_patt, lex_cb) in lex.into_iter() {
             let symbol = Symbol::from(lex_name).as_terminal();
             symbols.push(symbol);
-            let patt = format!(r"^\s*({})", lex_patt);
+            let patt = format!(r"^\s*?({})", lex_patt);
             lex_rules.push((symbol, patt, lex_cb));
         }
         let lex_rules_set = RegexSet::new(lex_rules.iter().map(|x| &x.1)).unwrap();
@@ -467,42 +497,61 @@ where
         // println!("{:?}", self.lex_rules);
         // println!("{:?}", self.lex_rules_set);
         // self.lex_rules_set.ma
-        for (symbol, rule, cb) in self.lex_rules.iter() {
-            if let Some(caps) = rule.captures(chunk.text) {
-                let m = caps.get(1).unwrap();
-                let (s, t) = (m.start(), m.end());
-                let mut beg = 0;
-                while let Some(pos) = chunk.text[beg..s].find(|c: char| c == '\n') {
-                    chunk.pos = (chunk.pos.0 + 1, 0);
-                    beg += pos + 1;
-                    chunk.line = &chunk.text[beg..];
-                }
-                chunk.pos.1 += s - beg;
+        loop {
+            let mut found = false;
+            for (symbol, rule, cb) in self.lex_rules.iter() {
+                if let Some(caps) = rule.captures(chunk.text) {
+                    let m = caps.get(2).unwrap_or(caps.get(1).unwrap());
+                    let (s, t) = (m.start(), m.end());
+                    let mut beg = 0;
+                    while let Some(pos) = chunk.text[beg..s].find(|c: char| c == '\n') {
+                        chunk.pos = (chunk.pos.0 + 1, 0);
+                        beg += pos + 1;
+                        chunk.line = &chunk.text[beg..];
+                    }
+                    chunk.pos.1 += s - beg;
 
-                let token_val = &chunk.text[s..t];
-                let tok_begin = chunk.pos;
+                    let token_val = &chunk.text[s..t];
+                    let tok_begin = chunk.pos;
 
-                beg = s;
-                while let Some(pos) = chunk.text[s..t].find(|c: char| c == '\n') {
-                    chunk.pos = (chunk.pos.0 + 1, 0);
-                    beg += pos + 1;
-                    chunk.line = &chunk.text[beg..];
+                    beg = s;
+                    while let Some(pos) = chunk.text[s..t].find(|c: char| c == '\n') {
+                        chunk.pos = (chunk.pos.0 + 1, 0);
+                        beg += pos + 1;
+                        chunk.line = &chunk.text[beg..];
+                    }
+                    chunk.pos.1 += t - beg;
+                    chunk.text = &chunk.text[t..];
+                    let mut tok = Token {
+                        symbol: *symbol,
+                        val: token_val,
+                        pos: (tok_begin, chunk.pos),
+                    };
+                    found = true;
+                    if let Some(cb) = cb {
+                        let mut ctrl = TokenCtrl {
+                            discard_token: false,
+                            new_location: None,
+                            new_source: None,
+                        };
+                        (*cb)(&mut tok, &mut ctrl);
+                        if let Some(new_source) = ctrl.new_source {
+                            chunk.file_name = new_source.into();
+                        }
+                        if let Some(new_location) = ctrl.new_location {
+                            chunk.pos = new_location;
+                        }
+                        if ctrl.discard_token {
+                            break;
+                        }
+                    }
+                    return Some(tok);
                 }
-                chunk.pos.1 += t - beg;
-                chunk.text = &chunk.text[t..];
-                let mut tok = Token {
-                    symbol: *symbol,
-                    val: token_val,
-                    pos: (tok_begin, chunk.pos),
-                };
-                if let Some(cb) = cb {
-                    (*cb)(&mut tok);
-                }
-                return Some(tok);
+            }
+            if !found {
+                return None;
             }
         }
-
-        None
     }
 
     fn do_reduce(&self, rule: &'a Rule<T::Output>, env: &mut ParseEnv<'a, T::Output>) {

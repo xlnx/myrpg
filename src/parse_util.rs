@@ -199,6 +199,7 @@ pub struct TextChunk<'a> {
     pub pos: (usize, usize),
     pub text: &'a str,
     pub line: &'a str,
+    pub file_name: String,
 }
 
 impl<'a> std::convert::From<&'a str> for TextChunk<'a> {
@@ -207,6 +208,7 @@ impl<'a> std::convert::From<&'a str> for TextChunk<'a> {
             pos: (0, 0),
             text,
             line: text,
+            file_name: "<unknown>".into(),
         }
     }
 }
@@ -221,7 +223,7 @@ impl<'a> std::convert::From<ParsingError<'a>> for LogItem<'a> {
         LogItem {
             level: Severity::Error,
             location: Some(SourceFileLocation {
-                name: "<@unknown-source-file>".into(),
+                name: item.chunk.file_name,
                 line: item.chunk.line,
                 from: if let Some(ref token) = item.token {
                     token.pos.0
