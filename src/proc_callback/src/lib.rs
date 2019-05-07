@@ -108,11 +108,7 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
         let mut terminals: Vec<(
             &'static str,
             &'static str,
-<<<<<<< HEAD
             Option<Box<Fn(&mut Token, &mut TokenCtrl) -> ()>>,
-=======
-            Option<Box<Fn(Token) -> Option<Token>>>,
->>>>>>> f87b5957d9b4b4428a82b099f936403cd0d085b0
         )> = vec![];
     };
     for (terminal, regex, callback) in terminals.iter() {
@@ -126,11 +122,7 @@ pub fn classify_symbols(input: TokenStream) -> TokenStream {
     // println!("{:?}", terminals);
 
     let output = quote! {
-<<<<<<< HEAD
         fn apply() -> (Vec<(&'static str, &'static str, Option<Box<Fn(&mut Token, &mut TokenCtrl) -> ()>>)>,
-=======
-        fn apply() -> (Vec<(&'static str, &'static str, Option<Box<Fn(Token) -> Option<Token>>>)>,
->>>>>>> f87b5957d9b4b4428a82b099f936403cd0d085b0
                 ::std::collections::HashSet<&'static str>) {
             ({ #terminals_quote terminals },
             { #non_terminals_quote non_terminals })

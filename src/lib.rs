@@ -224,16 +224,12 @@ pub trait LRLang {
     type Output;
 
     fn new<'a>() -> (
-<<<<<<< HEAD
 
         Vec<(
             &'a str,
             &'a str,
             Option<Box<Fn(&mut Token, &mut TokenCtrl) -> ()>>,
         )>,
-=======
-        Vec<(&'a str, &'a str, Option<Box<Fn(Token) -> Option<Token>>>)>,
->>>>>>> f87b5957d9b4b4428a82b099f936403cd0d085b0
         Vec<(
             &'a str,
             Vec<(
@@ -250,15 +246,11 @@ pub trait LRLang {
 
 #[allow(dead_code)]
 pub struct LRParser<'a, T: LRLang> {
-<<<<<<< HEAD
     lex_rules: Vec<(
         Symbol,
         Regex,
         Option<Box<Fn(&mut Token, &mut TokenCtrl) -> ()>>,
     )>,
-=======
-    lex_rules: Vec<(Symbol, Regex, Option<Box<Fn(Token) -> Option<Token>>>)>,
->>>>>>> f87b5957d9b4b4428a82b099f936403cd0d085b0
     lex_rules_set: RegexSet,
 
     closures: Vec<Closure<'a, T::Output>>,
@@ -530,18 +522,13 @@ where
                     }
                     chunk.pos.1 += t - beg;
                     chunk.text = &chunk.text[t..];
-<<<<<<< HEAD
                     let mut tok = Token {
-=======
-                    let tok = Token {
->>>>>>> f87b5957d9b4b4428a82b099f936403cd0d085b0
                         symbol: *symbol,
                         val: token_val,
                         pos: (tok_begin, chunk.pos),
                     };
                     found = true;
                     if let Some(cb) = cb {
-<<<<<<< HEAD
                         let mut ctrl = TokenCtrl {
                             discard_token: false,
                             new_location: None,
@@ -559,16 +546,6 @@ where
                         }
                     }
                     return Some(tok);
-=======
-                        if let Some(new_tok) = (*cb)(tok) {
-                            return Some(new_tok);
-                        } else {
-                            break;
-                        }
-                    } else {
-                        return Some(tok);
-                    }
->>>>>>> f87b5957d9b4b4428a82b099f936403cd0d085b0
                 }
             }
             if !found {

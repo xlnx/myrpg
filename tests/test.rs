@@ -1,4 +1,4 @@
-use myrpg::{ast::*, LRParser, *};
+use myrpg::{ast::*, LRParser, log::*, *};
 
 lang! {
 
@@ -55,7 +55,9 @@ lang! {
 #[test]
 fn test_mathexpr() {
     let parser = LRParser::<MathExpr>::new();
-    let res = parser.parse("4 * (2 + 1)");
+    let mut stdout = std::io::stdout();
+    let mut logger = Logger::from(&mut stdout);
+    let res = parser.parse("4 * (2 + 1)", &mut logger);
     //	println!("{:?}", res);
 }
 
@@ -85,7 +87,10 @@ lang! {
 fn test_ifexpr() {
     let parser = LRParser::<IfExpr>::new();
 
-    match parser.parse("if a b else c") {
+    let mut stdout = std::io::stdout();
+    let mut logger = Logger::from(&mut stdout);
+
+    match parser.parse("if a b else c", &mut logger) {
         Ok(ast) => {
             let val = ast.to_json_pretty();
             println!("{}", val);
