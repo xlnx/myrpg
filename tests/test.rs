@@ -1,4 +1,4 @@
-use myrpg::{ast::*, LRParser, log::*, *};
+use myrpg::{ast::*, log::*, LRParser, *};
 
 lang! {
 
@@ -52,14 +52,14 @@ lang! {
 
 }
 
-#[test]
-fn test_mathexpr() {
-    let parser = LRParser::<MathExpr>::new();
-    let mut stdout = std::io::stdout();
-    let mut logger = Logger::from(&mut stdout);
-    let res = parser.parse("4 * (2 + 1)", &mut logger);
-    //	println!("{:?}", res);
-}
+// #[test]
+// fn test_mathexpr() {
+//     let parser = LRParser::<MathExpr>::new();
+//     let mut stdout = std::io::stdout();
+//     let mut logger = Logger::from(&mut stdout);
+//     let res = parser.parse("4 * 2", &mut logger);
+//     //	println!("{:?}", res);
+// }
 
 lang! {
 

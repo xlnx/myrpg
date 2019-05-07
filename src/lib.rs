@@ -33,7 +33,7 @@ use index::*;
 mod formatter;
 
 pub mod log;
-use log::{Item as LogItem, Logger};
+use log::Logger;
 
 pub use proc_callback::*;
 
@@ -86,96 +86,23 @@ fn make_first<T>(first: &mut HashMap<Symbol, HashSet<Symbol>>, grammar: &Grammar
     }
 }
 
-fn make_follow<T>(
-    first: &HashMap<Symbol, HashSet<Symbol>>,
-    follow: &mut HashMap<Symbol, HashSet<Symbol>>,
-    grammar: &Grammar<T>,
-) {
-    let mut add_sub: bool;
-    loop {
-        add_sub = false;
-        for (src, rule_set) in grammar.iter() {
-            for rule in rule_set.iter() {
-                for (this_symbol, prev_symbol) in rule
-                    .symbols
-                    .iter()
-                    .skip(1)
-                    .rev()
-                    .zip(rule.symbols.iter().rev().skip(1))
-                {
-                    if prev_symbol.is_non_terminal() {
-                        let mut new_follows = vec![];
-                        if this_symbol.is_non_terminal() {
-                            let this_first = first.get(this_symbol).unwrap();
-                            let prev_follow = follow.get(prev_symbol).unwrap();
-
-                            // add all first[curr] to follow[prev]
-                            for first_elem in this_first.iter() {
-                                if *first_elem != BOTTOM && !prev_follow.contains(first_elem) {
-                                    new_follows.push(*first_elem);
-                                }
-                            }
-                            // if this elem yields eps
-                            if this_first.contains(&BOTTOM) {
-                                // add all follow[me] to follow[prev]
-                                for follow_elem in follow.get(&src).unwrap() {
-                                    if !prev_follow.contains(&follow_elem) {
-                                        new_follows.push(*follow_elem);
-                                    }
-                                }
-                            }
-                        } else if !follow.get(prev_symbol).unwrap().contains(this_symbol) {
-                            new_follows.push(*this_symbol);
-                        }
-
-                        // add all new follows to follow[prev]
-                        let prev_follow_mut = follow.get_mut(prev_symbol).unwrap();
-                        for follow in new_follows {
-                            prev_follow_mut.insert(follow);
-                            add_sub = true;
-                        }
-                    }
-                }
-
-                if let Some(back) = rule.symbols.iter().rev().next() {
-                    let back_follow = follow.get(back).unwrap();
-                    let mut new_follows = vec![];
-                    if back.is_non_terminal() {
-                        for follow_elem in follow.get(&src).unwrap() {
-                            if !back_follow.contains(follow_elem) {
-                                new_follows.push(*follow_elem);
-                            }
-                        }
-                    }
-                    let back_follow_mut = follow.get_mut(back).unwrap();
-                    for follow in new_follows {
-                        back_follow_mut.insert(follow);
-                        add_sub = true;
-                    }
-                }
-            }
-        }
-        // this closure follow is full
-        if !add_sub {
-            break;
-        }
-    }
-}
-
 fn make_closures<'a, T>(
     closures: &mut Vec<Closure<'a, T>>,
     goto: &mut Vec<HashMap<Symbol, usize>>,
+    first: &HashMap<Symbol, HashSet<Symbol>>,
     grammar: &'a Grammar<T>,
 ) {
     let mut origin = Closure::new(grammar);
     let rule = grammar.origin();
-    origin.insert(Item { rule, pos: 0 });
+    let mut la = HashSet::new();
+    la.insert(BOTTOM);
+    origin.insert(Item { rule, pos: 0, la });
 
     let mut incoming = VecDeque::new();
     incoming.push_back(origin);
 
     while let Some(closure) = incoming.pop_front() {
-        let expanded = closure.expanded();
+        let expanded = closure.expanded(first);
         let curr_state = closures.len();
         closures.push(closure);
         let mut following = HashMap::<Symbol, Closure<_>>::new();
@@ -355,12 +282,12 @@ where
         }
 
         let mut first: HashMap<Symbol, HashSet<Symbol>> = HashMap::new();
-        let mut follow: HashMap<Symbol, HashSet<Symbol>> = HashMap::new();
+        // let mut follow: HashMap<Symbol, HashSet<Symbol>> = HashMap::new();
 
         // insert symbols
         for symbol in symbols.iter() {
             first.index_mut_or_insert(*symbol).insert(*symbol);
-            follow.index_mut_or_insert(*symbol);
+            // follow.index_mut_or_insert(*symbol);
         }
 
         symbols.push(BOTTOM);
@@ -370,23 +297,23 @@ where
             for rule in rule_set.iter() {
                 for symbol in rule.symbols.iter() {
                     first.index_mut_or_insert(*symbol);
-                    if symbol.is_non_terminal() {
-                        follow.index_mut_or_insert(*symbol).insert(BOTTOM);
-                    }
+                    // if symbol.is_non_terminal() {
+                    //     follow.index_mut_or_insert(*symbol).insert(BOTTOM);
+                    // }
                 }
             }
             first.index_mut_or_insert(*src);
-            follow.index_mut_or_insert(*src).insert(BOTTOM);
+            // follow.index_mut_or_insert(*src).insert(BOTTOM);
             symbols.push(*src);
         }
-        follow
-            .index_mut_or_insert(grammar.origin().src)
-            .insert(BOTTOM);
+        // follow
+        //     .index_mut_or_insert(grammar.origin().src)
+        //     .insert(BOTTOM);
 
         // make first
         make_first(&mut first, &grammar);
         // make follow
-        make_follow(&first, &mut follow, &grammar);
+        // make_follow(&first, &mut follow, &grammar);
 
         // println!("FIRST = {:?}", first);
         // println!("FOLLOW = {:?}", follow);
@@ -394,9 +321,45 @@ where
         let mut closures: Vec<Closure<'a, T::Output>> = vec![];
         let mut goto: Vec<_> = vec![];
         // make closures
-        make_closures(&mut closures, &mut goto, unsafe {
+        make_closures(&mut closures, &mut goto, &first, unsafe {
             &*(&grammar as *const Grammar<T::Output>)
         });
+
+        loop {
+            let mut add_la = false;
+
+            for state in 0..closures.len() {
+                // println!("{}", state);
+                let closure = closures.get(state).unwrap();
+                for item in closure.expanded(&first).iter() {
+                    if let Some(det_sym) = item.rule.symbols.get(item.pos) {
+                        let goto = *goto[state].get(det_sym).unwrap();
+                        let cl = closures.get_mut(goto).unwrap();
+                        if let Some(next) = item.next() {
+                            let mut old_next = cl.take(&next).unwrap();
+                            if next.gt_some_what(&old_next) {
+                                old_next.insert(next);
+                                add_la = true;
+                            }
+                            cl.insert(old_next);
+                        }
+                    }
+                }
+            }
+
+            if !add_la {
+                break;
+            }
+        }
+
+        // println!(
+        //     "{}",
+        //     closures
+        //         // .iter()
+        //         // .map(|x| x.expanded(&first))
+        //         // .collect::<Vec<_>>()
+        //         .as_string()
+        // );
 
         let mut action: Vec<HashMap<Symbol, _>> = vec![];
         for _ in 0..goto.len() {
@@ -410,9 +373,9 @@ where
         }
 
         for (state, closure) in closures.iter().enumerate() {
-            for item in closure.expanded().iter() {
+            for item in closure.expanded(&first).iter() {
                 if item.is_complete() {
-                    for symbol in follow.get(&item.rule.src).unwrap().iter() {
+                    for symbol in item.la.iter() {
                         if action[state].contains_key(&symbol) {
                             let mut resolve = None;
                             let curr_action = action[state].get(&symbol).unwrap();
@@ -621,10 +584,10 @@ where
         // println!("states = {:?}", states);
         // // println!("action = {:?}", self.action[state]);
         // println!(
-        // 	"ACTION[{:?}][{:?}] = {:?}",
-        // 	state,
-        // 	symbol,
-        // 	self.action[state].get(&symbol)
+        //     "ACTION[{:?}][{:?}] = {:?}",
+        //     state,
+        //     symbol,
+        //     self.action[state].get(&symbol)
         // );
         match self.action[state].get(&symbol) {
             Some(action) => {

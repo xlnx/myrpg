@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 
 use pretty::{Doc, *};
@@ -12,6 +12,7 @@ use crate::util::{AsString, ToDoc};
 pub struct Item<'a, T> {
     pub rule: &'a Rule<T>,
     pub pos: usize,
+    pub la: HashSet<Symbol>,
 }
 
 impl<'a, T> Item<'a, T> {
@@ -29,12 +30,19 @@ impl<'a, T> Item<'a, T> {
         if self.is_complete() {
             None
         } else {
-            let Item { rule, pos } = self;
+            let Item { rule, pos, la } = self;
             Some(Item {
                 rule,
                 pos: *pos + 1,
+                la: la.clone(),
             })
         }
+    }
+    pub fn gt_some_what(&self, other: &Self) -> bool {
+        self.la.difference(&other.la).next().is_some()
+    }
+    pub fn insert(&mut self, other: Self) {
+        self.la = self.la.union(&other.la).map(|x| *x).collect();
     }
 }
 
@@ -84,7 +92,7 @@ impl<'a, T> ToDoc for Item<'a, T> {
         if idx == 0 {
             item += ". ";
         }
-        Doc::as_string(format!("{:?} -> {}", self.rule.src, item))
+        Doc::as_string(format!("{:?} -> {}, {:?}", self.rule.src, item, self.la))
     }
 }
 
@@ -100,6 +108,9 @@ impl<'a, T> Closure<'a, T> {
     pub fn iter(&self) -> std::collections::btree_set::Iter<Item<'a, T>> {
         self.0.iter()
     }
+    pub fn take(&mut self, item: &Item<'a, T>) -> Option<Item<'a, T>> {
+        self.0.take(&item)
+    }
     pub fn into_iter(self) -> std::collections::btree_set::IntoIter<Item<'a, T>> {
         self.0.into_iter()
     }
@@ -109,25 +120,57 @@ impl<'a, T> Closure<'a, T> {
     pub fn new(grammar: &'a Grammar<T>) -> Self {
         Closure(BTreeSet::new(), grammar)
     }
-    fn expand(&mut self, item: &Item<'a, T>) {
-        if !self.0.contains(&item) {
-            let Item { rule, pos } = item;
-            self.insert(Item { rule, pos: *pos });
-            if let Some(x) = rule.symbols.get(*pos) {
-                // Some non-terminal
-                if x.is_non_terminal() {
-                    // X -> ??
-                    for rule in self.1.get_rule_set(*x).iter() {
-                        self.expand(&Item { rule, pos: 0 });
-                    }
+    fn expand(&mut self, item: &Item<'a, T>, first: &HashMap<Symbol, HashSet<Symbol>>) -> bool {
+        // println!("{:?}", item);
+        let la = if let Some(old_item) = self.0.get(&item) {
+            // la has no item.
+            if item.gt_some_what(&old_item) {
+                return false;
+            }
+            self.0
+                .take(&item)
+                .unwrap()
+                .la
+                .union(&item.la)
+                .map(|x| *x)
+                .collect()
+        } else {
+            item.la.clone()
+        };
+        let Item { rule, pos, .. } = item;
+        self.insert(Item {
+            rule,
+            pos: *pos,
+            la: la.clone(),
+        });
+        if let Some(x) = rule.symbols.get(*pos) {
+            // Some non-terminal
+            if x.is_non_terminal() {
+                // X -> ??
+                let la = if rule.symbols.len() - 1 == *pos {
+                    la.clone()
+                } else {
+                    let next = rule.symbols.get(*pos + 1).unwrap();
+                    first.get(next).unwrap().clone()
+                };
+                for rule in self.1.get_rule_set(*x).iter() {
+                    self.expand(
+                        &Item {
+                        rule,
+                        pos: 0,
+                        la: la.clone() //: HashSet::new(),
+                    },
+                        first,
+                    );
                 }
             }
         }
+        true
     }
-    pub fn expanded(&self) -> Closure<'a, T> {
+    pub fn expanded(&self, first: &HashMap<Symbol, HashSet<Symbol>>) -> Closure<'a, T> {
         let mut closure = Closure(BTreeSet::new(), &self.1);
         for item in self.0.iter() {
-            closure.expand(item);
+            closure.expand(item, first);
         }
         closure
     }
