@@ -117,7 +117,11 @@ macro_rules! lang {
 			type Output = $res;
 
 			fn new<'a>() -> (
+<<<<<<< HEAD
 				Vec<(&'a str, &'a str, Option<Box<Fn(&mut Token, &mut TokenCtrl) -> ()>>)>,
+=======
+				Vec<(&'a str, &'a str, Option<Box<Fn(Token) -> Option<Token>>>)>,
+>>>>>>> f87b5957d9b4b4428a82b099f936403cd0d085b0
 				Vec<(
 					&'a str,
 					Vec<(
