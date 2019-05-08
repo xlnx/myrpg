@@ -259,7 +259,7 @@ impl<'a> std::convert::From<&'a str> for TextChunk<'a> {
 
 pub struct ParsingError<'a> {
     chunk: TextChunk<'a>,
-    token: Option<Token<'a>>,
+    token: Result<Option<Token<'a>>, ()>,
 }
 
 impl<'a> std::convert::From<ParsingError<'a>> for LogItem<'a> {
@@ -269,21 +269,19 @@ impl<'a> std::convert::From<ParsingError<'a>> for LogItem<'a> {
             location: Some(SourceFileLocation {
                 name: item.chunk.file_name,
                 line: item.chunk.line,
-                from: if let Some(ref token) = item.token {
-                    token.pos.0
-                } else {
-                    item.chunk.pos
+                from: match item.token {
+                    Ok(Some(ref token)) => token.pos.0,
+                    _ => item.chunk.pos
                 },
-                to: if let Some(ref token) = item.token {
-                    token.pos.1
-                } else {
-                    (item.chunk.pos.0, item.chunk.pos.1 + 1)
+                to: match item.token {
+                    Ok(Some(ref token)) => token.pos.1,
+                    _ => (item.chunk.pos.0, item.chunk.pos.1 + 1)
                 },
             }),
-            message: if let Some(ref token) = item.token {
-                format!("unexpected token: {:?}", token.val)
-            } else {
-                format!("unexpected eof")
+            message: match item.token {
+                Ok(Some(ref token)) => format!("unexpected token: {:?}", token.val),
+                Ok(None) => format!("unexpected eof"),
+                _ => format!("unknown stray `{}`", &item.chunk.text[0..1])
             },
         }
     }
@@ -291,7 +289,7 @@ impl<'a> std::convert::From<ParsingError<'a>> for LogItem<'a> {
 
 pub struct ParseEnv<'a, T> {
     pub chunk: TextChunk<'a>,
-    pub token: Option<Token<'a>>,
+    pub token: Result<Option<Token<'a>>, ()>,
     pub states: VecDeque<usize>,
     pub term_stack: VecDeque<Token<'a>>,
     pub ast_stack: VecDeque<Ast<'a, T>>,
@@ -301,7 +299,7 @@ impl<'a, T> std::convert::From<&'a str> for ParseEnv<'a, T> {
     fn from(text: &'a str) -> Self {
         ParseEnv {
             chunk: TextChunk::from(text),
-            token: None,
+            token: Ok(None),
             states: VecDeque::from(vec![0]),
             term_stack: VecDeque::new(),
             ast_stack: VecDeque::new(),

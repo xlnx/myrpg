@@ -154,7 +154,7 @@ where
         parser
     }
 
-    fn next<'b>(&self, chunk: &mut TextChunk<'b>) -> Option<Token<'b>> {
+    fn next<'b>(&self, chunk: &mut TextChunk<'b>) -> Result<Option<Token<'b>>, ()> {
         // println!("{:?}", self.lex_rules);
         // println!("{:?}", self.lex_rules_set);
         // self.lex_rules_set.ma
@@ -176,7 +176,7 @@ where
                     let tok_begin = chunk.pos;
 
                     beg = s;
-                    while let Some(pos) = chunk.text[s..t].find(|c: char| c == '\n') {
+                    while let Some(pos) = chunk.text[beg..t].find(|c: char| c == '\n') {
                         chunk.pos = (chunk.pos.0 + 1, 0);
                         beg += pos + 1;
                         chunk.line = &chunk.text[beg..];
@@ -206,11 +206,15 @@ where
                             break;
                         }
                     }
-                    return Some(tok);
+                    return Ok(Some(tok));
                 }
             }
             if !found {
-                return None;
+                if chunk.text.trim() == "" {
+                    return Ok(None);
+                } else {
+                    return Err(())
+                }
             }
         }
     }
@@ -292,12 +296,12 @@ where
                 match action {
                     Action::Shift(new_state) => {
                         states.push_back(*new_state);
-                        let token = std::mem::replace(&mut env.token, None);
-                        term_stack.push_back(token.unwrap());
+                        let token = std::mem::replace(&mut env.token, Ok(None));
+                        term_stack.push_back(token.unwrap().unwrap());
                         env.token = self.next(chunk);
                     }
                     Action::Accept => {
-                        if ast_stack.len() == 1 && env.token.is_none() && term_stack.is_empty() {
+                        if ast_stack.len() == 1 && env.token.as_ref().unwrap().is_none() && term_stack.is_empty() {
                             return Ok(true);
                         }
                     }
@@ -316,18 +320,27 @@ where
         env.token = self.next(&mut env.chunk);
 
         loop {
-            let symbol = if env.token.is_none() {
-                BOTTOM
-            } else {
-                env.token.as_ref().unwrap().symbol
-            };
-            match self.do_match(symbol, &mut env) {
-                Ok(true) => break,
-                Err(err) => {
+            match env.token {
+                Ok(ref token) => {
+                    let symbol = if env.token.as_ref().unwrap().is_none() {
+                        BOTTOM
+                    } else {
+                        token.as_ref().unwrap().symbol
+                    };
+                    match self.do_match(symbol, &mut env) {
+                        Ok(true) => break,
+                        Err(err) => {
+                            logger.log(&err.into());
+                            return Err(());
+                        }
+                        _ => {}
+                    }
+                }
+                Err(_) => {
+                    let err = env.report_error();
                     logger.log(&err.into());
                     return Err(());
                 }
-                _ => {}
             }
         }
 

@@ -423,7 +423,6 @@ fn test_ifexpr() {
         Ok(ast) => {
             let val = ast.to_json_pretty();
             println!("{}", val);
-            //			println!("{:?}", val)
         }
         Err(err) => println!("{:?}", err),
     }
