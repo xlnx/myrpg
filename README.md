@@ -1,10 +1,10 @@
 # Grammar
 
-SLR
+LALR
 
 # How does it work
 
-MyRpg use the `lang!` macro to collect essential grammar details at compile time. The SLR parsing table will be built during `SLRParser::new()` at run time (actually, it is possible to build the parsing table at compile time, with heavy usage of proc-macros).
+MyRpg use the `lang!` macro to collect essential grammar details and build LALR parsing table **AT COMPILE TIME**.
 
 The lexical analysis is proceeded along with parsing, instead of pre-collecting all the tokens. 
 
