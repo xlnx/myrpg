@@ -9,6 +9,7 @@ proc-macro2 = "^0.4.6"
 quote = "^0.6.3"
 syn = "^0.15.1"
 regex = "1.1.6"
+lalr_util = { path = "../lalr_util" }
 
 [lib]
 name = "proc_callback"

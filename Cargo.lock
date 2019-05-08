@@ -116,6 +116,7 @@ dependencies = [
 name = "proc_callback"
 version = "0.1.0"
 dependencies = [
+ "lalr_util 0.1.0",
  "proc-macro2 0.4.28 (registry+https://github.com/rust-lang/crates.io-index)",
  "quote 0.6.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.1.6 (registry+https://github.com/rust-lang/crates.io-index)",

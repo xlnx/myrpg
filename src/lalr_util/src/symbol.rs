@@ -30,6 +30,9 @@ impl Symbol {
     pub fn is_non_terminal(&self) -> bool {
         self.0 < 0
     }
+    pub fn is_bottom(&self) -> bool {
+        self.0 == BOTTOM.0
+    }
     pub fn as_str(&self) -> &'static str {
         decode(*self)
     }

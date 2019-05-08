@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
 use regex::{Regex, RegexSet};
@@ -7,120 +7,7 @@ pub use lalr_util::{ast::*, log::*, parse_util::*, rule::*, symbol::*};
 
 pub mod lang;
 
-mod index;
-use index::*;
-
 pub use proc_callback::*;
-
-fn make_first<T>(first: &mut HashMap<Symbol, HashSet<Symbol>>, grammar: &Grammar<T>) {
-    let mut add_sub: bool;
-    loop {
-        add_sub = false;
-        for (src, rule_set) in grammar.iter() {
-            // i am curr param
-            let my_firsts = first.get(&src).unwrap();
-            let mut new_firsts = vec![];
-            // each rule generated my me
-            for rule in rule_set.iter() {
-                // this rule generates eps
-                let mut has_empty = rule.symbols.len() == 0;
-                // each symbol in this rule
-                for symbol in rule.symbols.iter() {
-                    has_empty = false;
-                    let firsts = first.get(symbol).unwrap();
-                    // each symbol of first[symbol]
-                    for first_elem in firsts.iter() {
-                        if *first_elem == BOTTOM {
-                            // this symbol generates eps
-                            has_empty = true;
-                        } else if !my_firsts.contains(first_elem) {
-                            new_firsts.push(*first_elem);
-                        }
-                    }
-                    // this symbol cant generate eps
-                    if !has_empty {
-                        break;
-                    }
-                }
-                // this rule generates eps
-                if has_empty && !my_firsts.contains(&BOTTOM) {
-                    new_firsts.push(BOTTOM);
-                }
-            }
-            // now add new firsts into first[me]
-            let my_firsts_mut = first.get_mut(&src).unwrap();
-            for first_elem in new_firsts.iter() {
-                my_firsts_mut.insert(*first_elem);
-                add_sub = true;
-            }
-        }
-        // first closure is full
-        if !add_sub {
-            break;
-        }
-    }
-}
-
-fn make_closures<'a, T>(
-    closures: &mut Vec<Closure<'a, T>>,
-    goto: &mut Vec<HashMap<Symbol, usize>>,
-    first: &HashMap<Symbol, HashSet<Symbol>>,
-    grammar: &'a Grammar<T>,
-) {
-    let mut origin = Closure::new(grammar);
-    let rule = grammar.origin();
-    let mut la = HashSet::new();
-    la.insert(BOTTOM);
-    origin.insert(Item { rule, pos: 0, la });
-
-    let mut incoming = VecDeque::new();
-    incoming.push_back(origin);
-
-    while let Some(closure) = incoming.pop_front() {
-        let expanded = closure.expanded(first);
-        let curr_state = closures.len();
-        closures.push(closure);
-        let mut following = HashMap::<Symbol, Closure<_>>::new();
-        for item in expanded.into_iter() {
-            if let Some(next_item) = item.next() {
-                let symbol = item.symbol().unwrap();
-                if following.contains_key(&symbol) {
-                    following.get_mut(&symbol).unwrap().insert(next_item);
-                } else {
-                    let mut new_closure = Closure::new(grammar);
-                    new_closure.insert(next_item);
-                    following.insert(symbol, new_closure);
-                }
-            }
-        }
-        // println!("{:?}", following);
-        goto.push(HashMap::new());
-        for (symbol, new_closure) in following.into_iter() {
-            if closures.contains(&new_closure) {
-                let new_state = closures
-                    .iter()
-                    .enumerate()
-                    .find(|x| x.1 == &new_closure)
-                    .unwrap()
-                    .0;
-                goto[curr_state].insert(symbol, new_state);
-            } else if incoming.contains(&new_closure) {
-                let new_state = closures.len()
-                    + incoming
-                        .iter()
-                        .enumerate()
-                        .find(|x| x.1 == &new_closure)
-                        .unwrap()
-                        .0;
-                goto[curr_state].insert(symbol, new_state);
-            } else {
-                let new_state = closures.len() + incoming.len();
-                goto[curr_state].insert(symbol, new_state);
-                incoming.push_back(new_closure);
-            }
-        }
-    }
-}
 
 pub trait LRLang {
     type Output;
@@ -143,6 +30,7 @@ pub trait LRLang {
                 Vec<&'a str>,
             )>,
         )>,
+        Vec<HashMap<Symbol, CompactAction>>,
     );
 }
 
@@ -186,7 +74,7 @@ where
     T: LRLang,
 {
     pub fn new() -> Self {
-        let (lex, lang) = T::new();
+        let (lex, lang, action) = T::new();
 
         // make symbols
         let mut lex_rules = vec![];
@@ -205,9 +93,10 @@ where
             .collect();
         let terms_set: HashSet<Symbol> = symbols.iter().map(|x| *x).collect();
 
-        // make params
         let mut rule_id: usize = 0;
         let mut grammar = Grammar::new();
+        let mut rule_refs = vec![];
+
         for (lang_item, lang_rules) in lang.into_iter() {
             let src = Symbol::from(lang_item).as_non_terminal();
             let mut rules = vec![];
@@ -229,141 +118,30 @@ where
                 rule_id += 1;
                 rules.push(rule);
             }
-            grammar.insert(RuleSet { rules, src });
-        }
-
-        let mut first: HashMap<Symbol, HashSet<Symbol>> = HashMap::new();
-
-        // insert symbols
-        for symbol in symbols.iter() {
-            first.index_mut_or_insert(*symbol).insert(*symbol);
-        }
-
-        // insert non-symbols
-        for (src, rule_set) in grammar.iter() {
-            for rule in rule_set.iter() {
-                for symbol in rule.symbols.iter() {
-                    first.index_mut_or_insert(*symbol);
+            let set = RuleSet { rules, src };
+            {
+                for i in 0..set.rules.len() {
+                    let rule = &set.rules[i];
+                    rule_refs.push(unsafe { &*(rule as *const _) });
                 }
             }
-            first.index_mut_or_insert(*src);
+            grammar.insert(set);
         }
 
-        // make first
-        make_first(&mut first, &grammar);
-
-        let mut closures: Vec<Closure<'a, T::Output>> = vec![];
-        let mut goto: Vec<_> = vec![];
-        // make closures
-        make_closures(&mut closures, &mut goto, &first, unsafe {
-            &*(&grammar as *const Grammar<T::Output>)
-        });
-
-        loop {
-            let mut add_la = false;
-
-            for state in 0..closures.len() {
-                // println!("{}", state);
-                let closure = closures.get(state).unwrap();
-                for item in closure.expanded(&first).iter() {
-                    if let Some(det_sym) = item.rule.symbols.get(item.pos) {
-                        let goto = *goto[state].get(det_sym).unwrap();
-                        let cl = closures.get_mut(goto).unwrap();
-                        if let Some(next) = item.next() {
-                            let mut old_next = cl.take(&next).unwrap();
-                            if next.gt_some_what(&old_next) {
-                                old_next.insert(next);
-                                add_la = true;
-                            }
-                            cl.insert(old_next);
-                        }
-                    }
+        let action: Vec<HashMap<Symbol, _>> = //vec![];
+            action.into_iter()
+            .map(|state| {
+                let mut line = HashMap::new();
+                for (symbol, action) in state.iter() {
+                    line.insert(*symbol, match action {
+                        CompactAction::Accept => Action::Accept,
+                        CompactAction::Reduce(rule_id) => Action::Reduce(rule_refs[*rule_id]),
+                        CompactAction::Shift(new_state) => Action::Shift(*new_state)
+                    });
                 }
-            }
-
-            if !add_la {
-                break;
-            }
-        }
-
-        let mut action: Vec<HashMap<Symbol, _>> = vec![];
-        for _ in 0..goto.len() {
-            action.push(HashMap::new());
-        }
-
-        for (state, line) in goto.iter().enumerate() {
-            for (symbol, next_state) in line.iter() {
-                action[state].insert(*symbol, Action::Shift(*next_state));
-            }
-        }
-
-        for (state, closure) in closures.iter().enumerate() {
-            for item in closure.expanded(&first).iter() {
-                if item.is_complete() {
-                    for symbol in item.la.iter() {
-                        if action[state].contains_key(&symbol) {
-                            let mut resolve = None;
-                            let curr_action = action[state].get(&symbol).unwrap();
-                            match curr_action {
-                                Action::Shift(new_state) => {
-                                    if closures[*new_state]
-                                        .iter()
-                                        .all(|new_item| new_item.rule.src == item.rule.src)
-                                    {
-                                        resolve = Some(
-                                            closures[*new_state]
-                                                .iter()
-                                                .all(|new_item| new_item.rule.id > item.rule.id),
-                                        )
-                                    }
-                                }
-                                Action::Reduce(rule) => {
-                                    if rule.src == item.rule.src {
-                                        resolve = Some(rule.id > item.rule.id)
-                                    }
-                                }
-                                _ => {}
-                            }
-                            if let Some(resolve) = resolve {
-                                if resolve {
-                                    action[state].insert(
-                                        *symbol,
-                                        if item.rule == grammar.origin() {
-                                            Action::Accept
-                                        } else {
-                                            Action::Reduce(item.rule)
-                                        },
-                                    );
-                                }
-                            } else {
-                                let prev = match curr_action {
-                                    Action::Shift(new_state) => {
-                                        format!("Shifting to state {:?}", closures[*new_state])
-                                    }
-                                    Action::Reduce(rule) => format!("Reducing {:?}", rule),
-                                    Action::Accept => format!("Accept"),
-                                };
-                                panic!(format!(
-									"Conflict action found when receiving {:?}:\n#0: {}\n#1: Reducing {:?}\nCan't build parse table",
-									symbol,
-									prev,
-									item
-								));
-                            }
-                        } else {
-                            action[state].insert(
-                                *symbol,
-                                if item.rule == grammar.origin() {
-                                    Action::Accept
-                                } else {
-                                    Action::Reduce(item.rule)
-                                },
-                            );
-                        }
-                    }
-                }
-            }
-        }
+                line
+            })
+            .collect();
 
         let parser = LRParser {
             lex_rules,

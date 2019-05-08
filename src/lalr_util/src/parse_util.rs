@@ -324,11 +324,18 @@ pub enum Action<'a, T> {
     Shift(usize),
 }
 
+#[derive(Debug)]
+pub enum CompactAction {
+    Accept,
+    Reduce(usize),
+    Shift(usize),
+}
+
 impl<'a, T> std::fmt::Debug for Action<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let val = match self {
             Action::Accept => String::from("acc"),
-            Action::Reduce(_rule) => String::from("r"),
+            Action::Reduce(rule) => format!("{:?}", rule),
             Action::Shift(dst) => format!("s{}", dst),
         };
         if let Some(width) = f.width() {

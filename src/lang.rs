@@ -128,7 +128,8 @@ macro_rules! lang {
 						),
 						Vec<&'a str>
 					)>
-				)>
+				)>,
+				Vec<::std::collections::HashMap<Symbol, CompactAction>>
 			) {
 
 				type EventsType = (
@@ -136,7 +137,7 @@ macro_rules! lang {
 					Option<Box<Fn(&mut Ast<$res>) -> ()>>,
 				);
 
-				let (lex, non_terminals) = {
+				let lex = {
 					struct __Dummy;
 					impl __Dummy {
 						classify_symbols!($($l $reg ($($lcb)?) )* @ $($a)* $($($($b)*)*)*);
@@ -152,7 +153,25 @@ macro_rules! lang {
 					),*
 				);
 
-				(lex, lng)
+				let table = {
+					struct __Dummy;
+					impl __Dummy {
+						build_lalr_table!(
+							($($l $reg ($($lcb)?) )* @ $($a)* $($($($b)*)*)*)
+							(
+								$((
+									$a
+									$((
+										$($b)*
+									))*
+								))*
+							)
+						);
+					}
+					__Dummy::apply()
+				};
+
+				(lex, lng, table)
 			}
 		}
 	};
