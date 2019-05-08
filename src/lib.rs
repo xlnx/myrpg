@@ -63,8 +63,8 @@ impl TokenCtrl {
         self.new_source = Some(String::from(src));
         self
     }
-    pub fn set_location(&mut self, loc: (usize, usize)) -> &mut Self {
-        self.new_location = Some(loc);
+    pub fn set_location(&mut self, loc: (isize, isize)) -> &mut Self {
+        self.new_location = Some((loc.0 as usize, loc.1 as usize));
         self
     }
 }
@@ -166,7 +166,7 @@ where
                     let (s, t) = (m.start(), m.end());
                     let mut beg = 0;
                     while let Some(pos) = chunk.text[beg..s].find(|c: char| c == '\n') {
-                        chunk.pos = (chunk.pos.0 + 1, 0);
+                        chunk.pos = (chunk.pos.0.overflowing_add(1).0, 0);
                         beg += pos + 1;
                         chunk.line = &chunk.text[beg..];
                     }
@@ -177,7 +177,7 @@ where
 
                     beg = s;
                     while let Some(pos) = chunk.text[beg..t].find(|c: char| c == '\n') {
-                        chunk.pos = (chunk.pos.0 + 1, 0);
+                        chunk.pos = (chunk.pos.0.overflowing_add(1).0, 0);
                         beg += pos + 1;
                         chunk.line = &chunk.text[beg..];
                     }
@@ -213,7 +213,16 @@ where
                 if chunk.text.trim() == "" {
                     return Ok(None);
                 } else {
-                    return Err(())
+                    let dl = chunk.text.len() - chunk.text.trim_start().len();
+                    let mut beg = 0;
+                    while let Some(pos) = chunk.text[beg..dl].find(|c: char| c == '\n') {
+                        chunk.pos = (chunk.pos.0.overflowing_add(1).0, 0);
+                        beg += pos + 1;
+                        chunk.line = &chunk.text[beg..];
+                    }
+                    chunk.pos.1 += dl - beg;
+                    chunk.text = &chunk.text[dl..];
+                    return Err(());
                 }
             }
         }
@@ -301,7 +310,10 @@ where
                         env.token = self.next(chunk);
                     }
                     Action::Accept => {
-                        if ast_stack.len() == 1 && env.token.as_ref().unwrap().is_none() && term_stack.is_empty() {
+                        if ast_stack.len() == 1
+                            && env.token.as_ref().unwrap().is_none()
+                            && term_stack.is_empty()
+                        {
                             return Ok(true);
                         }
                     }
