@@ -1,3 +1,4 @@
+use ptree::*;
 use pretty::{Doc, *};
 use serde::{
     ser::{SerializeSeq, SerializeStruct, SerializeTuple},
@@ -162,6 +163,30 @@ impl<'a, T> Ast<'a, T> {
             String::from_utf8_unchecked(w)
         };
         string
+    }
+    pub fn print_tree(&self) {
+        let json = serde_json::from_str(self.to_json_pretty().as_str()).unwrap();
+        let mut builder = TreeBuilder::new("@".to_string());
+        to_tree_impl(&json, &mut builder);
+        let tree = builder.build();
+        print_tree(&tree).unwrap();
+    }
+}
+
+fn to_tree_impl(node: &serde_json::Value, builder: &mut TreeBuilder) {
+    match node {
+        serde_json::Value::Object(map) => {
+            builder.begin_child(map["type"].as_str().unwrap().into());
+            let children = map["children"].as_array().unwrap();
+            for child in children.iter() {
+                to_tree_impl(&child, builder);
+            }
+            builder.end_child();
+        }
+        serde_json::Value::Array(arr) => {
+            builder.add_empty_child(arr[1].as_str().unwrap().into());
+        }
+        _ => {}
     }
 }
 

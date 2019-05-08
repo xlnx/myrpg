@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate ref_thread_local;
 extern crate serde_json;
+extern crate ptree;
 
 pub mod ast;
 pub mod formatter;
