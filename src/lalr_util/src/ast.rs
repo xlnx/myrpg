@@ -167,7 +167,17 @@ impl<'a, T> Ast<'a, T> {
     pub fn print_tree(&self) {
         let json = serde_json::from_str(self.to_json_pretty().as_str()).unwrap();
         let mut builder = TreeBuilder::new("@".to_string());
-        to_tree_impl(&json, &mut builder);
+        match json {
+            serde_json::Value::Object(ref map) => {
+                to_tree_impl(&json, &mut builder);
+            }
+            serde_json::Value::Array(ref arr) => {
+                for node in arr.iter() {
+                    to_tree_impl(&node, &mut builder);
+                }
+            }
+            _ => {}
+        }
         let tree = builder.build();
         print_tree(&tree).unwrap();
     }
