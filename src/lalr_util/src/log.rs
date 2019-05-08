@@ -33,13 +33,13 @@ pub struct SourceFileLocation<'a> {
     pub to: (usize, usize),
 }
 
-pub struct Item<'a> {
+pub struct LogItem<'a> {
     pub level: Severity,
     pub location: Option<SourceFileLocation<'a>>,
     pub message: String,
 }
 
-impl<'a> Item<'a> {
+impl<'a> LogItem<'a> {
     pub fn is_error(&self) -> bool {
         if let Severity::Error = self.level {
             true
@@ -87,13 +87,13 @@ impl<'a> Logger<'a> {
 }
 
 impl<'a> Logger<'a> {
-    pub fn log<'b>(&mut self, item: &Item<'b>) {
-        let Item {
+    pub fn log<'b>(&mut self, item: &LogItem<'b>) {
+        let LogItem {
             level,
             location: loc,
             message,
         } = item;
-        
+
         let message = format!("{}: {}", level.apply(level.as_str()), message);
 
         writeln!(self.writer, "{}", message.bold()).unwrap();

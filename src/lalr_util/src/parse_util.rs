@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use pretty::{Doc, *};
 
 use crate::ast::{Ast, Token};
-use crate::log::{Item as LogItem, Severity, SourceFileLocation};
+use crate::log::{LogItem, Severity, SourceFileLocation};
 use crate::rule::{Grammar, Rule};
 use crate::symbol::Symbol;
 use crate::util::{AsString, ToDoc};

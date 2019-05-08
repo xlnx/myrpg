@@ -12,6 +12,7 @@ regex = "1.1.6"
 ref_thread_local = "0.0.0"
 pretty = "0.5.2"
 proc_callback = { path = "./src/proc_callback" }
+lalr_util = { path = "./src/lalr_util" }
 serde = "1.0.90"                          # A generic serialization/deserialization framework
 #serde_derive = "1.0.90"    # Macros 1.1 implementation of #[derive(Serialize, Deserialize)]
 serde_json = "1.0.39"                     # A JSON serialization file format

@@ -243,3 +243,11 @@ pub fn wrap_callback(input: TokenStream) -> TokenStream {
     // println!("YIELDS    ==>   {}", output.to_string());
     output.into()
 }
+
+#[proc_macro]
+pub fn build_lalr_table(input: TokenStream) -> TokenStream {
+    let mut input = proc_macro2::TokenStream::from(input).into_iter();
+
+    let output = quote! {};
+    output.into()
+}

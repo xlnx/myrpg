@@ -51,7 +51,7 @@ impl std::fmt::Debug for Symbol {
     }
 }
 
-pub(crate) const BOTTOM: Symbol = Symbol(0);
+pub const BOTTOM: Symbol = Symbol(0);
 
 ref_thread_local! {
     static managed SYMBOL: HashMap<Symbol, String> = HashMap::new();

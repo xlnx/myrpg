@@ -1,39 +1,14 @@
-#[macro_use]
-extern crate ref_thread_local;
-extern crate serde_json;
-
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::marker::PhantomData;
 
 use regex::{Regex, RegexSet};
 
-pub mod symbol;
-use symbol::*;
-
-mod util;
-#[allow(unused_imports)]
-use util::*;
-
-pub mod ast;
-use ast::*;
-
-pub mod wrapper;
-
-mod rule;
-use rule::*;
-
-mod parse_util;
-use parse_util::*;
+pub use lalr_util::{ast::*, log::*, parse_util::*, rule::*, symbol::*};
 
 pub mod lang;
 
 mod index;
 use index::*;
-
-mod formatter;
-
-pub mod log;
-use log::Logger;
 
 pub use proc_callback::*;
 
@@ -180,9 +155,7 @@ pub struct LRParser<'a, T: LRLang> {
     )>,
     lex_rules_set: RegexSet,
 
-    closures: Vec<Closure<'a, T::Output>>,
     grammar: Grammar<T::Output>,
-    symbols: Vec<Symbol>,
     action: Vec<HashMap<Symbol, Action<'a, T::Output>>>,
     phantom: PhantomData<T>,
 }
@@ -212,28 +185,6 @@ impl<'a, T> LRParser<'a, T>
 where
     T: LRLang,
 {
-    pub fn format_actions(&self) -> String {
-        let width = 6;
-        let mut res = String::new();
-        res += &format!("{:<width$}", "", width = width);
-        for symbol in self.symbols.iter() {
-            res += &format!("{:<width$?}", symbol, width = width);
-        }
-        res += "\n";
-        for (state, line) in self.action.iter().enumerate() {
-            res += &format!("{:<width$}", state, width = width);
-            for symbol in self.symbols.iter() {
-                if let Some(action) = line.get(symbol) {
-                    res += &format!("{:<width$?}", action, width = width);
-                } else {
-                    res += &format!("{:<width$}", "", width = width);
-                }
-            }
-            res += "\n"
-        }
-        res
-    }
-
     pub fn new() -> Self {
         let (lex, lang) = T::new();
 
@@ -282,41 +233,24 @@ where
         }
 
         let mut first: HashMap<Symbol, HashSet<Symbol>> = HashMap::new();
-        // let mut follow: HashMap<Symbol, HashSet<Symbol>> = HashMap::new();
 
         // insert symbols
         for symbol in symbols.iter() {
             first.index_mut_or_insert(*symbol).insert(*symbol);
-            // follow.index_mut_or_insert(*symbol);
         }
-
-        symbols.push(BOTTOM);
 
         // insert non-symbols
         for (src, rule_set) in grammar.iter() {
             for rule in rule_set.iter() {
                 for symbol in rule.symbols.iter() {
                     first.index_mut_or_insert(*symbol);
-                    // if symbol.is_non_terminal() {
-                    //     follow.index_mut_or_insert(*symbol).insert(BOTTOM);
-                    // }
                 }
             }
             first.index_mut_or_insert(*src);
-            // follow.index_mut_or_insert(*src).insert(BOTTOM);
-            symbols.push(*src);
         }
-        // follow
-        //     .index_mut_or_insert(grammar.origin().src)
-        //     .insert(BOTTOM);
 
         // make first
         make_first(&mut first, &grammar);
-        // make follow
-        // make_follow(&first, &mut follow, &grammar);
-
-        // println!("FIRST = {:?}", first);
-        // println!("FOLLOW = {:?}", follow);
 
         let mut closures: Vec<Closure<'a, T::Output>> = vec![];
         let mut goto: Vec<_> = vec![];
@@ -324,15 +258,6 @@ where
         make_closures(&mut closures, &mut goto, &first, unsafe {
             &*(&grammar as *const Grammar<T::Output>)
         });
-
-        // println!(
-        //     "{}",
-        //     closures
-        //         // .iter()
-        //         // .map(|x| x.expanded(&first))
-        //         // .collect::<Vec<_>>()
-        //         .as_string()
-        // );
 
         loop {
             let mut add_la = false;
@@ -360,15 +285,6 @@ where
                 break;
             }
         }
-
-        // println!(
-        //     "{}",
-        //     closures
-        //         // .iter()
-        //         // .map(|x| x.expanded(&first))
-        //         // .collect::<Vec<_>>()
-        //         .as_string()
-        // );
 
         let mut action: Vec<HashMap<Symbol, _>> = vec![];
         for _ in 0..goto.len() {
@@ -453,14 +369,9 @@ where
             lex_rules,
             lex_rules_set,
             grammar,
-            symbols,
-            closures,
             action,
             phantom: PhantomData,
         };
-
-        // println!("Closures = {}", closures.as_string());
-        // println!("{}", parser.format_actions());
 
         parser
     }
