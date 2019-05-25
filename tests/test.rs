@@ -419,7 +419,7 @@ fn test_ifexpr() {
     let mut stdout = std::io::stdout();
     let mut logger = Logger::from(&mut stdout);
 
-    match parser.parse("if a b else c", &mut logger) {
+    match parser.parse("if a b else c \nd", &mut logger) {
         Ok(ast) => {
             let val = ast.to_json_pretty();
             println!("{}", val);

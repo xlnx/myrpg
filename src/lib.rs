@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
-use regex::{Regex, RegexSet};
+use regex::Regex;
 
 pub use lalr_util::{ast::*, log::*, parse_util::*, rule::*, symbol::*};
 
 pub mod lang;
 
 pub use proc_callback::*;
+pub use lalr_util::symbol::Symbol;
 
 pub trait LRLang {
     type Output;
@@ -34,15 +35,35 @@ pub trait LRLang {
     );
 }
 
-#[allow(dead_code)]
-pub struct LRParser<'a, T: LRLang> {
-    lex_rules: Vec<(
-        Symbol,
-        Regex,
-        Option<Box<Fn(&mut Token, &mut TokenCtrl) -> ()>>,
-    )>,
-    lex_rules_set: RegexSet,
+pub trait LexerProvider {
+    fn new(rules: Vec<(Symbol, Regex)>) -> Self;
+    fn emit(&self, val: &str) -> Option<(Symbol, usize)>;
+}
 
+pub struct DefaultRegexLexer {
+    lex_rules: Vec<(Symbol, Regex)>
+}
+
+impl LexerProvider for DefaultRegexLexer {
+    fn new(lex_rules: Vec<(Symbol, Regex)>) -> Self {
+        return DefaultRegexLexer {lex_rules}
+    }
+    fn emit(&self, val: &str) -> Option<(Symbol, usize)> {
+        for (symbol, rule) in self.lex_rules.iter() {
+            if let Some(caps) = rule.captures(val) {
+                let m = caps.get(2).unwrap_or(caps.get(1).unwrap());
+                let (_, t) = (m.start(), m.end());
+                return Some((*symbol, t))
+            }
+        }
+        None
+    }
+}
+
+#[allow(dead_code)]
+pub struct LRParser<'a, T: LRLang, L: LexerProvider = DefaultRegexLexer> {
+    lex_cbs: HashMap<Symbol, Box<Fn(&mut Token, &mut TokenCtrl) -> ()>>,
+    lexer: L,
     grammar: Grammar<T::Output>,
     action: Vec<HashMap<Symbol, Action<'a, T::Output>>>,
     phantom: PhantomData<T>,
@@ -69,27 +90,31 @@ impl TokenCtrl {
     }
 }
 
-impl<'a, T> LRParser<'a, T>
+impl<'a, T, L> LRParser<'a, T, L>
 where
     T: LRLang,
+    L: LexerProvider
 {
     pub fn new() -> Self {
         let (lex, lang, action) = T::new();
 
         // make symbols
         let mut lex_rules = vec![];
+        let mut lex_cbs = HashMap::new();
 
         let mut symbols = vec![];
         for (lex_name, lex_patt, lex_cb) in lex.into_iter() {
             let symbol = Symbol::from(lex_name).as_terminal();
             symbols.push(symbol);
-            let patt = format!(r"^\s*?({})", lex_patt);
-            lex_rules.push((symbol, patt, lex_cb));
+            let patt = format!(r"^({})", lex_patt);
+            if let Some(cb) = lex_cb {
+                lex_cbs.insert(symbol, cb);
+            }
+            lex_rules.push((symbol, patt));
         }
-        let lex_rules_set = RegexSet::new(lex_rules.iter().map(|x| &x.1)).unwrap();
         let lex_rules: Vec<_> = lex_rules
             .into_iter()
-            .map(|x| (x.0, Regex::new(&x.1).unwrap(), x.2))
+            .map(|x| (x.0, Regex::new(&x.1).unwrap()))
             .collect();
         let terms_set: HashSet<Symbol> = symbols.iter().map(|x| *x).collect();
 
@@ -144,8 +169,8 @@ where
             .collect();
 
         let parser = LRParser {
-            lex_rules,
-            lex_rules_set,
+            lex_cbs,
+            lexer: L::new(lex_rules),
             grammar,
             action,
             phantom: PhantomData,
@@ -154,62 +179,56 @@ where
         parser
     }
 
+    fn forward_chunk(chunk: &mut TextChunk, mut beg: usize, end: usize) {
+        while let Some(pos) = chunk.text[beg..end].find(|c: char| c == '\n') {
+            chunk.pos.0 = chunk.pos.0.overflowing_add(1).0;
+            chunk.pos.1 = 0;
+            beg += pos + 1;
+            chunk.line = &chunk.text[beg..];
+        }
+        chunk.pos.1 += end - beg;
+    }
+
     fn next<'b>(&self, chunk: &mut TextChunk<'b>) -> Result<Option<Token<'b>>, ()> {
         // println!("{:?}", self.lex_rules);
         // println!("{:?}", self.lex_rules_set);
         // self.lex_rules_set.ma
         loop {
-            let mut found = false;
-            for (symbol, rule, cb) in self.lex_rules.iter() {
-                if let Some(caps) = rule.captures(chunk.text) {
-                    let m = caps.get(2).unwrap_or(caps.get(1).unwrap());
-                    let (s, t) = (m.start(), m.end());
-                    let mut beg = 0;
-                    while let Some(pos) = chunk.text[beg..s].find(|c: char| c == '\n') {
-                        chunk.pos = (chunk.pos.0.overflowing_add(1).0, 0);
-                        beg += pos + 1;
-                        chunk.line = &chunk.text[beg..];
-                    }
-                    chunk.pos.1 += s - beg;
+            let spaces = chunk.text.len() - chunk.text.trim_start().len();
+            Self::forward_chunk(chunk, 0, spaces);
+            chunk.text = &chunk.text[spaces..];
 
-                    let token_val = &chunk.text[s..t];
-                    let tok_begin = chunk.pos;
+            if let Some((symbol, t)) = self.lexer.emit(chunk.text) {
+                let token_val = &chunk.text[..t];
+                let tok_begin = chunk.pos;
 
-                    beg = s;
-                    while let Some(pos) = chunk.text[beg..t].find(|c: char| c == '\n') {
-                        chunk.pos = (chunk.pos.0.overflowing_add(1).0, 0);
-                        beg += pos + 1;
-                        chunk.line = &chunk.text[beg..];
-                    }
-                    chunk.pos.1 += t - beg;
-                    chunk.text = &chunk.text[t..];
-                    let mut tok = Token {
-                        symbol: *symbol,
-                        val: token_val,
-                        pos: (tok_begin, chunk.pos),
+                Self::forward_chunk(chunk, 0, t);
+                chunk.text = &chunk.text[t..];
+
+                let mut tok = Token {
+                    symbol: symbol,
+                    val: token_val,
+                    pos: (tok_begin, chunk.pos),
+                };
+                if let Some(cb) = self.lex_cbs.get(&symbol) {
+                    let mut ctrl = TokenCtrl {
+                        discard_token: false,
+                        new_location: None,
+                        new_source: None,
                     };
-                    found = true;
-                    if let Some(cb) = cb {
-                        let mut ctrl = TokenCtrl {
-                            discard_token: false,
-                            new_location: None,
-                            new_source: None,
-                        };
-                        (*cb)(&mut tok, &mut ctrl);
-                        if let Some(new_source) = ctrl.new_source {
-                            chunk.file_name = new_source.into();
-                        }
-                        if let Some(new_location) = ctrl.new_location {
-                            chunk.pos = new_location;
-                        }
-                        if ctrl.discard_token {
-                            break;
-                        }
+                    (*cb)(&mut tok, &mut ctrl);
+                    if let Some(new_source) = ctrl.new_source {
+                        chunk.file_name = new_source.into();
                     }
-                    return Ok(Some(tok));
+                    if let Some(new_location) = ctrl.new_location {
+                        chunk.pos = new_location;
+                    }
+                    if ctrl.discard_token {
+                        continue;
+                    }
                 }
-            }
-            if !found {
+                return Ok(Some(tok));
+            } else {
                 if chunk.text.trim() == "" {
                     return Ok(None);
                 } else {
