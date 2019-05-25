@@ -91,9 +91,9 @@ impl TokenCtrl {
 }
 
 impl<'a, T, L> LRParser<'a, T, L>
-where
-    T: LRLang,
-    L: LexerProvider
+    where
+        T: LRLang,
+        L: LexerProvider
 {
     pub fn new() -> Self {
         let (lex, lang, action) = T::new();
@@ -155,18 +155,18 @@ where
 
         let action: Vec<HashMap<Symbol, _>> = //vec![];
             action.into_iter()
-            .map(|state| {
-                let mut line = HashMap::new();
-                for (symbol, action) in state.iter() {
-                    line.insert(*symbol, match action {
-                        CompactAction::Accept => Action::Accept,
-                        CompactAction::Reduce(rule_id) => Action::Reduce(rule_refs[*rule_id]),
-                        CompactAction::Shift(new_state) => Action::Shift(*new_state)
-                    });
-                }
-                line
-            })
-            .collect();
+                .map(|state| {
+                    let mut line = HashMap::new();
+                    for (symbol, action) in state.iter() {
+                        line.insert(*symbol, match action {
+                            CompactAction::Accept => Action::Accept,
+                            CompactAction::Reduce(rule_id) => Action::Reduce(rule_refs[*rule_id]),
+                            CompactAction::Shift(new_state) => Action::Shift(*new_state)
+                        });
+                    }
+                    line
+                })
+                .collect();
 
         let parser = LRParser {
             lex_cbs,
@@ -197,6 +197,10 @@ where
             let spaces = chunk.text.len() - chunk.text.trim_start().len();
             Self::forward_chunk(chunk, 0, spaces);
             chunk.text = &chunk.text[spaces..];
+
+            if chunk.text.len() == 0 {
+                return Ok(None);
+            }
 
             if let Some((symbol, t)) = self.lexer.emit(chunk.text) {
                 let token_val = &chunk.text[..t];
@@ -229,20 +233,16 @@ where
                 }
                 return Ok(Some(tok));
             } else {
-                if chunk.text.trim() == "" {
-                    return Ok(None);
-                } else {
-                    let dl = chunk.text.len() - chunk.text.trim_start().len();
-                    let mut beg = 0;
-                    while let Some(pos) = chunk.text[beg..dl].find(|c: char| c == '\n') {
-                        chunk.pos = (chunk.pos.0.overflowing_add(1).0, 0);
-                        beg += pos + 1;
-                        chunk.line = &chunk.text[beg..];
-                    }
-                    chunk.pos.1 += dl - beg;
-                    chunk.text = &chunk.text[dl..];
-                    return Err(());
+                let dl = chunk.text.len() - chunk.text.trim_start().len();
+                let mut beg = 0;
+                while let Some(pos) = chunk.text[beg..dl].find(|c: char| c == '\n') {
+                    chunk.pos = (chunk.pos.0.overflowing_add(1).0, 0);
+                    beg += pos + 1;
+                    chunk.line = &chunk.text[beg..];
                 }
+                chunk.pos.1 += dl - beg;
+                chunk.text = &chunk.text[dl..];
+                return Err(());
             }
         }
     }
