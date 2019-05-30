@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use pretty::{Doc, *};
 
 use crate::ast::{Ast, Token};
-use crate::log::{LogItem, Severity, SourceFileLocation};
+use crate::log::{LogItem, Severity, SourceFileLocation, SourceLocationProvider};
 use crate::rule::{Grammar, Rule};
 use crate::symbol::Symbol;
 use crate::util::{AsString, ToDoc};
@@ -240,54 +240,65 @@ impl<'a, T> ToDoc for Vec<Closure<'a, T>> {
 
 #[derive(Clone)]
 pub struct TextChunk<'a> {
-    pub pos: (usize, usize),
     pub text: &'a str,
-    pub line: &'a str,
-    pub file_name: String,
+    pub offset: usize,
+    pub dx: usize,
+    pub pos: (usize, usize),
+}
+
+impl<'a> TextChunk<'a> {
+    pub fn get_line(&self) -> &'a str {
+        &self.text[self.text[..self.offset].rfind('\n')
+            .map_or(0, |x| x+1)..]
+    }
 }
 
 impl<'a> std::convert::From<&'a str> for TextChunk<'a> {
     fn from(text: &'a str) -> Self {
         TextChunk {
-            pos: (0, 0),
             text,
-            line: text,
-            file_name: "<unknown>".into(),
+            offset: 0,
+            dx: 0,
+            pos: (0, 0),
         }
     }
 }
 
 pub struct ParsingError<'a> {
-    chunk: TextChunk<'a>,
+    provider: SourceLocationProvider<'a>,   // source file
+    from: (usize, usize),        // source file location
+    to: (usize, usize),        // source file location
     token: Result<Option<Token<'a>>, ()>,
 }
 
 impl<'a> std::convert::From<ParsingError<'a>> for LogItem<'a> {
     fn from(item: ParsingError<'a>) -> Self {
+        let ParsingError{
+            provider,
+            from,
+            to,
+            token
+        } = item;
         LogItem {
             level: Severity::Error,
-            location: Some(SourceFileLocation {
-                name: item.chunk.file_name,
-                line: item.chunk.line,
-                from: match item.token {
-                    Ok(Some(ref token)) => token.pos.0,
-                    _ => item.chunk.pos
-                },
-                to: match item.token {
-                    Ok(Some(ref token)) => token.pos.1,
-                    _ => (item.chunk.pos.0, item.chunk.pos.1 + 1)
-                },
-            }),
-            message: match item.token {
-                Ok(Some(ref token)) => format!("unexpected token: {:?}", token.val),
+            location: Some(SourceFileLocation{ provider, from, to }),
+            message: match token {
+                Ok(Some(token)) => format!("unexpected token: {:?}", token.val),
                 Ok(None) => format!("unexpected eof"),
-                _ => format!("unknown stray `{}`", &item.chunk.text[0..1])
+                _ => format!("unknown stray: ")
             },
         }
     }
 }
 
+pub struct SourceFileMark {
+    pub name: String,
+    pub raw_pos: (usize, usize),     // loc of end of the mark in raw file
+    pub src_pos: (usize, usize)      // loc in source file
+}
+
 pub struct ParseEnv<'a, T> {
+    pub sources: Vec<SourceFileMark>,
     pub chunk: TextChunk<'a>,
     pub token: Result<Option<Token<'a>>, ()>,
     pub states: VecDeque<usize>,
@@ -298,6 +309,7 @@ pub struct ParseEnv<'a, T> {
 impl<'a, T> std::convert::From<&'a str> for ParseEnv<'a, T> {
     fn from(text: &'a str) -> Self {
         ParseEnv {
+            sources: vec![],
             chunk: TextChunk::from(text),
             token: Ok(None),
             states: VecDeque::from(vec![0]),
@@ -307,12 +319,55 @@ impl<'a, T> std::convert::From<&'a str> for ParseEnv<'a, T> {
     }
 }
 
+fn calc_pos(x: &(usize, usize), an: &(usize, usize), dx: &(usize, usize)) -> (usize, usize) {
+    if x.0 == an.0 {
+        // same line with file mark
+        (x.0 - an.0 + dx.0, x.1 - an.1 + dx.1)
+    } else {
+        (x.0 - an.0 + dx.0, x.1)
+    }
+}
+
 impl<'a, T> ParseEnv<'a, T> {
     pub fn report_error(&self) -> ParsingError<'a> {
-        ParsingError {
-            chunk: self.chunk.clone(),
-            token: self.token.clone(),
-        }
+        let len = self.sources.len();
+        let mut an = (0, 0);
+        let mut dx = (0, 0);
+        let provider = if len != 0 {
+            // some source code location is provided
+            let SourceFileMark{
+                name: ref src,
+                raw_pos: an1,
+                src_pos: dx1
+            } = self.sources[len - 1];
+            an = an1;
+            dx = dx1;
+            SourceLocationProvider::File(src.clone())
+        } else {
+            SourceLocationProvider::Line(self.chunk.get_line())
+        };
+        let from= if let Ok(Some(ref token)) = self.token {
+            calc_pos(&token.pos.0, &an, &dx)
+        } else {
+            calc_pos(&self.chunk.pos, &an, &dx)
+        };
+        let to= calc_pos(&self.chunk.pos, &an, &dx);
+        let token = self.token.clone();
+        ParsingError { provider, from, to, token }
+    }
+    pub fn find_by_raw_src_range(&self, row: usize, col: usize) -> Option<&SourceFileMark> {
+        let x = self.sources.binary_search_by(|mark| {
+            mark.raw_pos.cmp(&(row, col))
+        });
+        let x = match x {
+            Err(x) => if let 0 = x {
+                return None
+            } else {
+                x - 1       // start
+            },
+            Ok(x) => x
+        };
+        self.sources.get(x)
     }
 }
 

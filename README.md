@@ -56,11 +56,13 @@ Expr "+" Term => |lhs, _, rhs| -> _ {
 }
 ```
 
-If you overwrite this function, you have to call `ast.gen()` manually to traverse child ASTs.
+If you override this function, you have to call `ast.gen()` manually to traverse child ASTs.
 
 
 
 # Usage
+
+## Default traverse method
 
 ```rust
 use myrpg::{ast::*, LRParser, *};
@@ -121,7 +123,7 @@ lang! {
 fn test_mathexpr() {
 	let parser = LRParser::<MathExpr>::new();
 	let res = parser.parse("4 * (2 + 1)");
-	println!("{:?}", res);
+	println!("{:?}", res.unwrap().gen());
 }
 
 ```

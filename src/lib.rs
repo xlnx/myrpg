@@ -9,6 +9,7 @@ pub mod lang;
 
 pub use proc_callback::*;
 pub use lalr_util::symbol::Symbol;
+use lalr_util::parse_util::SourceFileMark;
 
 pub trait LRLang {
     type Output;
@@ -71,8 +72,7 @@ pub struct LRParser<'a, T: LRLang, L: LexerProvider = DefaultRegexLexer> {
 
 pub struct TokenCtrl {
     discard_token: bool,
-    new_source: Option<String>,
-    new_location: Option<(usize, usize)>,
+    new_location: Option<(String, (usize, usize))>,
 }
 
 impl TokenCtrl {
@@ -80,12 +80,8 @@ impl TokenCtrl {
         self.discard_token = true;
         self
     }
-    pub fn set_source_file(&mut self, src: &str) -> &mut Self {
-        self.new_source = Some(String::from(src));
-        self
-    }
-    pub fn set_location(&mut self, loc: (isize, isize)) -> &mut Self {
-        self.new_location = Some((loc.0 as usize, loc.1 as usize));
+    pub fn set_location(&mut self, src: &str, loc: (usize, usize)) -> &mut Self {
+        self.new_location = Some((String::from(src), loc));
         self
     }
 }
@@ -179,53 +175,59 @@ impl<'a, T, L> LRParser<'a, T, L>
         parser
     }
 
-    fn forward_chunk(chunk: &mut TextChunk, mut beg: usize, end: usize) {
-        while let Some(pos) = chunk.text[beg..end].find(|c: char| c == '\n') {
-            chunk.pos.0 = chunk.pos.0.overflowing_add(1).0;
-            chunk.pos.1 = 0;
+    fn forward_newline(text: &mut &str, end: usize, counter: &mut (usize, usize)) {
+        let mut beg = 0;
+        while let Some(pos) = text[beg..end].find(|c: char| c == '\n') {
+            counter.0 = counter.0 + 1;
+            counter.1 = 0;
             beg += pos + 1;
-            chunk.line = &chunk.text[beg..];
         }
-        chunk.pos.1 += end - beg;
+        counter.1 += end - beg;
+        *text = &text[end..];
     }
 
-    fn next<'b>(&self, chunk: &mut TextChunk<'b>) -> Result<Option<Token<'b>>, ()> {
+    fn next<'b>(&self, chunk: &mut TextChunk<'b>, sources: &mut Vec<SourceFileMark>) -> Result<Option<Token<'b>>, ()> {
         // println!("{:?}", self.lex_rules);
         // println!("{:?}", self.lex_rules_set);
         // self.lex_rules_set.ma
         loop {
-            let spaces = chunk.text.len() - chunk.text.trim_start().len();
-            Self::forward_chunk(chunk, 0, spaces);
-            chunk.text = &chunk.text[spaces..];
+            chunk.offset += chunk.dx;
+            chunk.dx = 0;
 
-            if chunk.text.len() == 0 {
+            let mut text= &chunk.text[chunk.offset..];
+            let spaces = text.len() - text.trim_start().len();
+            Self::forward_newline(&mut text, spaces, &mut chunk.pos);
+            chunk.offset += spaces;
+
+            if text.len() == 0 {
                 return Ok(None);
             }
 
-            if let Some((symbol, t)) = self.lexer.emit(chunk.text) {
-                let token_val = &chunk.text[..t];
+            if let Some((symbol, t)) = self.lexer.emit(text) {
+                let token_val = &text[..t];
                 let tok_begin = chunk.pos;
 
-                Self::forward_chunk(chunk, 0, t);
-                chunk.text = &chunk.text[t..];
+                Self::forward_newline(&mut text, t, &mut chunk.pos);
+                chunk.dx = t;
 
                 let mut tok = Token {
-                    symbol: symbol,
+                    symbol,
                     val: token_val,
                     pos: (tok_begin, chunk.pos),
                 };
+
                 if let Some(cb) = self.lex_cbs.get(&symbol) {
                     let mut ctrl = TokenCtrl {
                         discard_token: false,
                         new_location: None,
-                        new_source: None,
                     };
                     (*cb)(&mut tok, &mut ctrl);
-                    if let Some(new_source) = ctrl.new_source {
-                        chunk.file_name = new_source.into();
-                    }
-                    if let Some(new_location) = ctrl.new_location {
-                        chunk.pos = new_location;
+                    if let Some((file, src_pos)) = ctrl.new_location {
+                        sources.push(SourceFileMark{
+                            name: file,
+                            raw_pos: tok.pos.1,
+                            src_pos
+                        });
                     }
                     if ctrl.discard_token {
                         continue;
@@ -233,15 +235,6 @@ impl<'a, T, L> LRParser<'a, T, L>
                 }
                 return Ok(Some(tok));
             } else {
-                let dl = chunk.text.len() - chunk.text.trim_start().len();
-                let mut beg = 0;
-                while let Some(pos) = chunk.text[beg..dl].find(|c: char| c == '\n') {
-                    chunk.pos = (chunk.pos.0.overflowing_add(1).0, 0);
-                    beg += pos + 1;
-                    chunk.line = &chunk.text[beg..];
-                }
-                chunk.pos.1 += dl - beg;
-                chunk.text = &chunk.text[dl..];
                 return Err(());
             }
         }
@@ -304,6 +297,7 @@ impl<'a, T, L> LRParser<'a, T, L>
             ast_stack,
             term_stack,
             chunk,
+            sources,
             ..
         } = env;
         let state = *states.back().unwrap();
@@ -326,7 +320,7 @@ impl<'a, T, L> LRParser<'a, T, L>
                         states.push_back(*new_state);
                         let token = std::mem::replace(&mut env.token, Ok(None));
                         term_stack.push_back(token.unwrap().unwrap());
-                        env.token = self.next(chunk);
+                        env.token = self.next(chunk, sources);
                     }
                     Action::Accept => {
                         if ast_stack.len() == 1
@@ -346,9 +340,9 @@ impl<'a, T, L> LRParser<'a, T, L>
         }
     }
 
-    pub fn parse(&self, text: &'a str, logger: &mut Logger) -> Result<Ast<T::Output>, ()> {
+    pub fn parse(&self, text: &'a str, logger: &mut Logger) -> Result<(Ast<T::Output>, Vec<SourceFileMark>), ()> {
         let mut env = ParseEnv::from(text);
-        env.token = self.next(&mut env.chunk);
+        env.token = self.next(&mut env.chunk, &mut env.sources);
 
         loop {
             match env.token {
@@ -381,6 +375,6 @@ impl<'a, T, L> LRParser<'a, T, L>
         } = env;
         let ast = deq_ast.remove(0).unwrap();
 
-        Ok(ast)
+        Ok((ast, env.sources))
     }
 }

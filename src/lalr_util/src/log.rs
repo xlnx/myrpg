@@ -1,4 +1,5 @@
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
+use std::fs::File;
 
 use colored::{ColoredString, Colorize};
 
@@ -26,9 +27,13 @@ impl Severity {
     }
 }
 
+pub enum SourceLocationProvider<'a> {
+    File(String),
+    Line(&'a str)
+}
+
 pub struct SourceFileLocation<'a> {
-    pub name: String,
-    pub line: &'a str,
+    pub provider: SourceLocationProvider<'a>,
     pub from: (usize, usize),
     pub to: (usize, usize),
 }
@@ -99,70 +104,110 @@ impl<'a> Logger<'a> {
         writeln!(self.writer, "{}", message.bold()).unwrap();
 
         if let Some(loc) = loc {
-            let line = String::from(if let Some(pos) = loc.line.find(|c: char| c == '\n') {
-                &loc.line[..pos]
-            } else {
-                loc.line
-            });
-            let trimmed = line.as_str(); //.trim_end();
 
-            let (begin, end) = (loc.from.1, loc.to.1);
-
-            let mut pos = [begin, end];
-            let trimmed = replace_tab(trimmed, &mut pos);
-            let [begin, end] = pos;
+            let text_lines= match loc.provider {
+                SourceLocationProvider::File(ref file_name) => Some(
+                    if let Ok(f) = File::open(file_name) {
+                        BufReader::new(&f).lines().into_iter()
+                            .skip(loc.from.0)
+                            .take(loc.to.0 - loc.from.0 + 1)
+                            .map(|x| x.unwrap())
+                            .collect()
+                    } else {
+                        vec![]      // cant open file
+                    }
+                ),
+                _ => None
+            };
+            let text_lines: Vec<_> = match loc.provider {
+                SourceLocationProvider::Line(ref line) => vec![*line],
+                _ => text_lines.as_ref().unwrap().iter()
+                    .map(|x| x.as_str()).collect()
+            }.into_iter()
+                .map(|x| x.trim_end())
+                .collect();
 
             let anchor_num = format!("{} | ", loc.from.0 + 1);
             let anchor = format!("{:width$} | ", "", width = anchor_num.len() - 3);
 
+            // location line
             writeln!(
                 self.writer,
                 "{:>width$} {}:{}:{}",
                 "-->".blue().bold(),
-                loc.name,
+                match loc.provider {
+                    SourceLocationProvider::File(ref file) => file.as_str(),
+                    _ => "anonymous-input"
+                },
                 loc.from.0 + 1,
                 loc.from.1 + 1,
                 width = anchor_num.len()
             )
             .unwrap();
 
+            // 0 - anchor line
             writeln!(self.writer, "{}", anchor.blue().bold()).unwrap();
 
-            write!(
-                self.writer,
-                "{}{}",
-                anchor_num.blue().bold(),
-                &trimmed.as_str()[..begin]
-            )
-            .unwrap();
-            write!(
-                self.writer,
-                "{}",
-                level.apply(&trimmed.as_str()[begin..end])
-            )
-            .unwrap();
-            writeln!(self.writer, "{}", &trimmed.as_str()[end..]).unwrap();
+//            let mut line_begin = begin;
+            let mut line_id = loc.from.0;
 
-            write!(
-                self.writer,
-                "{}{}",
-                anchor.blue().bold(),
-                std::iter::repeat(' ').take(begin).collect::<String>()
-            )
-            .unwrap();
-            writeln!(
-                self.writer,
-                "{}",
-                level
-                    .apply(
-                        std::iter::repeat('^')
-                            .take(end - begin)
-                            .collect::<String>()
-                            .as_str()
-                    )
-                    .bold()
-            )
-            .unwrap();
+            for line in text_lines.iter() {
+                let mut line_begin= if line_id > loc.from.0 {
+                    0
+                } else {
+                    loc.from.1
+                };
+                let mut line_end = if line_id < loc.to.0 {
+                    line.len()
+                } else {
+                    loc.to.1
+                };
+
+                line_begin += line[line_begin..].len() - line[line_begin..].trim_start().len();
+                line_end -= line[..line_end].len() - line[..line_end].trim_end().len();
+
+                let mut pos = [line_begin, line_end];
+                let trimmed = replace_tab(line, &mut pos);
+                let [begin, end] = pos;
+
+                write!(
+                    self.writer,
+                    "{}{}",
+                    anchor_num.blue().bold(),
+                    &trimmed[..begin]
+                )
+                    .unwrap();
+                write!(
+                    self.writer,
+                    "{}",
+                    level.apply(&trimmed[begin..end])
+                )
+                    .unwrap();
+                writeln!(self.writer, "{}", &trimmed[end..]).unwrap();
+
+                write!(
+                    self.writer,
+                    "{}{}",
+                    anchor.blue().bold(),
+                    std::iter::repeat(' ').take(begin).collect::<String>()
+                )
+                    .unwrap();
+                writeln!(
+                    self.writer,
+                    "{}",
+                    level
+                        .apply(
+                            std::iter::repeat('^')
+                                .take(end - begin)
+                                .collect::<String>()
+                                .as_str()
+                        )
+                        .bold()
+                )
+                    .unwrap();
+
+                line_id += 1;
+            }
         }
 
         writeln!(self.writer).unwrap();
