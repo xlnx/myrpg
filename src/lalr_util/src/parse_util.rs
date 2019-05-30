@@ -328,46 +328,68 @@ fn calc_pos(x: &(usize, usize), an: &(usize, usize), dx: &(usize, usize)) -> (us
     }
 }
 
+pub trait SourceMap<'a> {
+    fn map_error(&self, begin: &(usize, usize), end: &(usize, usize))
+        ->
+        Option<(SourceLocationProvider<'a>, (usize, usize), (usize, usize))>;
+}
+
+fn find_by_raw_src_range(this: &Vec<SourceFileMark>, row: usize, col: usize) -> Option<&SourceFileMark> {
+    let x = this.binary_search_by(|mark| {
+        mark.raw_pos.cmp(&(row, col))
+    });
+    let x = match x {
+        Err(x) => if let 0 = x {
+            return None
+        } else {
+            x - 1       // start
+        },
+        Ok(x) => x
+    };
+    this.get(x)
+}
+
+impl<'a> SourceMap<'a> for Vec<SourceFileMark> {
+    fn map_error(&self, begin: &(usize, usize), end: &(usize, usize))
+        ->
+        Option<(SourceLocationProvider<'a>, (usize, usize), (usize, usize))>
+    {
+        if let Some(SourceFileMark{
+            name: ref src,
+            raw_pos: an,
+            src_pos: dx
+        }) = find_by_raw_src_range(&self, begin.0, begin.1) {
+            let from= calc_pos(begin, &an, &dx);
+            let to= calc_pos(end, &an, &dx);
+            Some((SourceLocationProvider::File(src.clone()), from, to))
+        } else {
+            None
+        }
+    }
+}
+
 impl<'a, T> ParseEnv<'a, T> {
     pub fn report_error(&self) -> ParsingError<'a> {
-        let len = self.sources.len();
-        let mut an = (0, 0);
-        let mut dx = (0, 0);
-        let provider = if len != 0 {
-            // some source code location is provided
-            let SourceFileMark{
-                name: ref src,
-                raw_pos: an1,
-                src_pos: dx1
-            } = self.sources[len - 1];
-            an = an1;
-            dx = dx1;
-            SourceLocationProvider::File(src.clone())
-        } else {
-            SourceLocationProvider::Line(self.chunk.get_line())
+        let (provider, from, to) = match self.token {
+            Ok(Some(ref token)) => {
+                self.sources.map_error(&token.pos.0, &token.pos.1)
+                    .unwrap_or((
+                        SourceLocationProvider::Line(self.chunk.get_line()),
+                        token.pos.0,
+                        token.pos.1
+                    ))
+            }
+            _ => {
+                self.sources.map_error(&self.chunk.pos, &self.chunk.pos)
+                    .unwrap_or((
+                        SourceLocationProvider::Line(self.chunk.get_line()),
+                        self.chunk.pos,
+                        self.chunk.pos
+                    ))
+            }
         };
-        let from= if let Ok(Some(ref token)) = self.token {
-            calc_pos(&token.pos.0, &an, &dx)
-        } else {
-            calc_pos(&self.chunk.pos, &an, &dx)
-        };
-        let to= calc_pos(&self.chunk.pos, &an, &dx);
         let token = self.token.clone();
         ParsingError { provider, from, to, token }
-    }
-    pub fn find_by_raw_src_range(&self, row: usize, col: usize) -> Option<&SourceFileMark> {
-        let x = self.sources.binary_search_by(|mark| {
-            mark.raw_pos.cmp(&(row, col))
-        });
-        let x = match x {
-            Err(x) => if let 0 = x {
-                return None
-            } else {
-                x - 1       // start
-            },
-            Ok(x) => x
-        };
-        self.sources.get(x)
     }
 }
 
