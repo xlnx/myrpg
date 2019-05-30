@@ -9,7 +9,7 @@ pub mod lang;
 
 pub use proc_callback::*;
 pub use lalr_util::symbol::Symbol;
-use lalr_util::parse_util::SourceFileMark;
+pub use lalr_util::parse_util::SourceFileMark;
 
 pub trait LRLang {
     type Output;
